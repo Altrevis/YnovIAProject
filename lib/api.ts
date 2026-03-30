@@ -71,6 +71,8 @@ export interface RenderedResult {
   html: string;
   /** Réponses XHR/fetch JSON interceptées pendant le chargement */
   interceptedJson: Record<string, unknown>[][];
+  /** Toutes les arrays JSON ≥10 items capturées (même non-exhibitor-like) */
+  broadJson: Record<string, unknown>[][];
   /** Cards extraites directement du DOM vivant via page.evaluate() */
   playwrightCards: PlaywrightCard[];
 }
@@ -116,6 +118,7 @@ export async function fetchWebsiteRendered(url: string): Promise<RenderedResult>
 
     const page = await context.newPage();
     const interceptedJson: Record<string, unknown>[][] = [];
+    const broadJson: Record<string, unknown>[][] = [];
 
     // Intercepte toutes les réponses XHR/fetch qui renvoient du JSON
     page.on('response', async (response) => {
@@ -157,9 +160,13 @@ export async function fetchWebsiteRendered(url: string): Promise<RenderedResult>
         };
 
         const arr = findArray(body);
-        // N'ajoute l'array QUE s'il contient au moins un objet ressemblant à un exposant
         if (arr && arr.length >= 2 && arr.some(looksLikeExhibitor)) {
           interceptedJson.push(arr);
+        }
+        // Capture élargie : toute array ≥10 items (même sans critère exposant)
+        // utile pour les plateformes avec des noms de champs non-standard
+        if (arr && arr.length >= 10) {
+          broadJson.push(arr);
         }
       } catch { /* ignorer les erreurs de parsing */ }
     });
@@ -299,7 +306,7 @@ export async function fetchWebsiteRendered(url: string): Promise<RenderedResult>
 
     await context.close();
 
-    return { html, interceptedJson, playwrightCards };
+    return { html, interceptedJson, broadJson, playwrightCards };
   } finally {
     await browser.close();
   }

@@ -11,10 +11,9 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model: llm('local-model'),
-    system: `Tu es un assistant IA conversationnel spécialisé dans les salons professionnels et l'extraction de données d'entreprises.
-Réponds en français de façon concise et utile.
-Si l'utilisateur mentionne une URL, dis-lui que tu vas l'analyser automatiquement dès qu'il l'envoie dans le chat.`,
+    system: `Tu es un assistant IA conversationnel. Réponds en français, de façon concise et directe.`,
     messages,
+    maxTokens: 600,
   });
 
   return result.toDataStreamResponse();

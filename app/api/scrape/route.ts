@@ -90,19 +90,50 @@ function mergeWithCheerio(
 // ─── Direct mapping from raw API JSON (no AI, no hallucination) ───────────────
 
 function mapRawToExhibitor(raw: Record<string, unknown>): Exhibitor {
+  // Exact match, puis fallback case-insensitive (gère les variantes camelCase comme DisplayName)
   const get = (...keys: string[]): string => {
     for (const k of keys) {
       const v = raw[k];
       if (v && typeof v === 'string' && v.trim()) return v.trim();
     }
+    // Fallback case-insensitive
+    const lk = keys.map(k => k.toLowerCase());
+    for (const [rk, rv] of Object.entries(raw)) {
+      if (lk.includes(rk.toLowerCase()) && typeof rv === 'string' && rv.trim()) return rv.trim();
+    }
     return 'N/A';
   };
+
+  // Handles { country: { name: "France" } } nested objects
+  const getCountry = (): string => {
+    const direct = get('pays', 'country', 'countryName', 'nation', 'countryCode',
+      'country_name', 'country_code', 'paysLabel', 'paysName');
+    if (direct !== 'N/A') return direct;
+    for (const k of ['country', 'pays', 'nation', 'location']) {
+      const v = raw[k];
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        const o = v as Record<string, unknown>;
+        const name = o.name ?? o.label ?? o.code ?? o.isoCode ?? o.iso;
+        if (name && typeof name === 'string') return name;
+      }
+    }
+    return 'N/A';
+  };
+
   const cats = (() => {
-    for (const k of ['categories', 'tags', 'interests', 'sectors', 'themes', 'types']) {
+    for (const k of ['categories', 'tags', 'interests', 'sectors', 'themes', 'types',
+      'thematic', 'thematics', 'sector', 'industries', 'topics', 'domains', 'solutions']) {
       const v = raw[k];
       if (Array.isArray(v)) {
         return v
-          .map(x => (typeof x === 'object' && x !== null ? (x as { name?: string }).name ?? '' : String(x)))
+          .map(x => {
+            if (typeof x === 'string') return x;
+            if (typeof x === 'object' && x !== null) {
+              const o = x as Record<string, unknown>;
+              return o.name ?? o.label ?? o.title ?? o.value ?? '';
+            }
+            return '';
+          })
           .filter(Boolean)
           .join(', ') || 'N/A';
       }
@@ -110,18 +141,31 @@ function mapRawToExhibitor(raw: Record<string, unknown>): Exhibitor {
     }
     return 'N/A';
   })();
+
   return {
-    nom: get('nom', 'name', 'title', 'company', 'exhibitor', 'companyName', 'organisationName', 'label'),
-    description: get('description', 'desc', 'about', 'summary', 'content', 'body', 'text'),
-    siteWeb: get('siteWeb', 'website', 'url', 'web', 'site', 'homepage', 'websiteUrl', 'siteurl'),
-    logo: get('logo', 'image', 'thumbnail', 'photo', 'avatar', 'logoUrl', 'imageUrl', 'picture'),
-    stand: get('stand', 'booth', 'hall', 'location', 'emplacement', 'standNumber', 'boothNumber', 'standNo', 'hallStand'),
-    pays: get('pays', 'country', 'countryName', 'nation', 'countryCode'),
-    linkedin: get('linkedin', 'linkedinUrl', 'linkedin_url', 'linkedIn'),
-    twitter: get('twitter', 'twitterUrl', 'twitter_url', 'x', 'xUrl'),
+    nom: get('nom', 'name', 'title', 'company', 'exhibitor', 'companyName', 'organisationName',
+      'organizationName', 'displayName', 'exhibitorName', 'brandName', 'label', 'firmName', 'companyLabel'),
+    description: get('description', 'desc', 'about', 'summary', 'content', 'body', 'text',
+      'shortDescription', 'longDescription', 'profileDescription', 'exhibitorDescription',
+      'companyDescription', 'pitch', 'presentation', 'bio'),
+    siteWeb: get('siteWeb', 'website', 'url', 'web', 'site', 'homepage', 'websiteUrl', 'siteUrl',
+      'siteurl', 'companyWebsite', 'officialWebsite', 'externalUrl', 'webUrl', 'websiteLink'),
+    logo: get('logo', 'image', 'thumbnail', 'photo', 'avatar', 'logoUrl', 'imageUrl',
+      'picture', 'companyLogo', 'logoSrc', 'exhibitorLogo', 'profileImage', 'squareLogoUrl',
+      'logoImageUrl', 'companyImage', 'mediaUrl'),
+    stand: get('stand', 'booth', 'hall', 'location', 'emplacement', 'standNumber', 'boothNumber',
+      'standNo', 'hallStand', 'boothId', 'standId', 'hallNumber', 'pavillon', 'pavilion',
+      'boothLocation', 'standLocation', 'standLabel'),
+    pays: getCountry(),
+    linkedin: get('linkedin', 'linkedinUrl', 'linkedin_url', 'linkedIn', 'linkedInUrl',
+      'linkedinProfile', 'linkedInProfile', 'linkedinLink'),
+    twitter: get('twitter', 'twitterUrl', 'twitter_url', 'x', 'xUrl', 'twitterHandle',
+      'twitterProfile', 'twitterLink'),
     categories: cats,
-    email: get('email', 'mail', 'emailAddress', 'contactEmail'),
-    telephone: get('telephone', 'phone', 'tel', 'phoneNumber', 'contactPhone'),
+    email: get('email', 'mail', 'emailAddress', 'contactEmail', 'email_address',
+      'companyEmail', 'businessEmail', 'contactMail'),
+    telephone: get('telephone', 'phone', 'tel', 'phoneNumber', 'contactPhone',
+      'phone_number', 'mobile', 'mobileNumber', 'companyPhone', 'contactTel'),
   };
 }
 
@@ -278,7 +322,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const { isListing, rawCards, embeddedJSON, interceptedJson, playwrightCards, html } = ctx;
+  const { isListing, rawCards, embeddedJSON, interceptedJson, broadJson, playwrightCards, html } = ctx;
 
   // ═══════════════════════════════════════════════════════════════════════════
   // CAS 1 : PAGE LISTE D'EXPOSANTS
@@ -308,18 +352,26 @@ export async function POST(req: Request) {
         card: {
           nom: c.name,
           logo: c.logo || 'N/A',
-          categories: c.categories || 'N/A',
+          // Ignore les catégories "#" (ancre vide) qui polluent les résultats
+          categories: (c.categories && c.categories !== '#') ? c.categories : 'N/A',
           siteWeb: c.href || 'N/A',
           stand: 'N/A', pays: 'N/A', linkedin: 'N/A', twitter: 'N/A',
           description: 'N/A', email: 'N/A', telephone: 'N/A',
         },
-        detailUrl: c.href || null,
+        detailUrl: (c.href && c.href !== '#') ? c.href : null,
       }));
       const enriched = await enrichCards(cards);
-      if (!isFooterContaminated(enriched)) {
+      // Porte de qualité : si les pages détail sont aussi des SPA (enrichissement = 0),
+      // ne pas retourner des résultats vides → continuer vers la découverte d'API
+      const hasDeepData = enriched.some(e =>
+        e.description !== 'N/A' || e.pays !== 'N/A' || e.email !== 'N/A' ||
+        e.telephone !== 'N/A' || e.stand !== 'N/A' || e.linkedin !== 'N/A',
+      );
+      if (!isFooterContaminated(enriched) && hasDeepData) {
         const clean = enriched.map(({ _detailUrl: _, ...rest }) => rest as Exhibitor);
         return Response.json({ type: 'list', exhibitors: clean, count: clean.length, source: 'playwright-dom' });
       }
+      // Pas de données enrichies → pages détail sont aussi des SPA, on continue vers l'API
     }
 
     // 1b. Pagination + collecte toutes les pages
@@ -379,6 +431,21 @@ ${ANTI_HALLUCINATION}`,
           return Response.json({ type: 'list', exhibitors: data as Exhibitor[], count: data.length, source: 'json-embedded' });
         }
       } catch { /* fall through */ }
+    }
+
+    // 1e. Fallback broadJson : arrays capturées sans filtre exhibitor-like
+    // Utile pour les plateformes avec noms de champs non-standard (ex: Swapcard, EventMobi)
+    if (broadJson.length > 0) {
+      const candidates = broadJson
+        .filter(arr => arr.length >= 5)
+        .sort((a, b) => b.length - a.length);
+      for (const arr of candidates) {
+        const exhibitors = arr.map(mapRawToExhibitor);
+        const hasRealData = exhibitors.some(e => e.nom !== 'N/A');
+        if (hasRealData) {
+          return Response.json({ type: 'list', exhibitors, count: exhibitors.length, source: 'playwright-broad-json' });
+        }
+      }
     }
 
     // Aucune donnée trouvée → le site est probablement une SPA (chargement JS dynamique)

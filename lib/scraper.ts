@@ -946,6 +946,8 @@ export interface ScrapeContext {
   embeddedJSON: unknown[];
   /** Tableaux JSON capturés par Playwright en interceptant les requêtes réseau */
   interceptedJson: Record<string, unknown>[][];
+  /** Toutes les arrays JSON ≥10 items capturées (même non-exhibitor-like) */
+  broadJson: Record<string, unknown>[][];
   /** Cards extraites directement du DOM vivant par Playwright (jamais hors SPA) */
   playwrightCards: PlaywrightCard[];
   html: string;
@@ -969,6 +971,7 @@ function isSpaShell(html: string): boolean {
 export async function scrapeUrl(url: string): Promise<ScrapeContext> {
   let html: string;
   let interceptedJson: Record<string, unknown>[][] = [];
+  let broadJson: Record<string, unknown>[][] = [];
   let playwrightCards: PlaywrightCard[] = [];
   let usedPlaywright = false;
 
@@ -981,6 +984,7 @@ export async function scrapeUrl(url: string): Promise<ScrapeContext> {
       const rendered = await fetchWebsiteRendered(url);
       html = rendered.html;
       interceptedJson = rendered.interceptedJson;
+      broadJson = rendered.broadJson;
       playwrightCards = rendered.playwrightCards;
       usedPlaywright = true;
     } else {
@@ -994,6 +998,7 @@ export async function scrapeUrl(url: string): Promise<ScrapeContext> {
       const rendered = await fetchWebsiteRendered(url);
       html = rendered.html;
       interceptedJson = rendered.interceptedJson;
+      broadJson = rendered.broadJson;
       playwrightCards = rendered.playwrightCards;
       usedPlaywright = true;
     } catch {
@@ -1012,6 +1017,7 @@ export async function scrapeUrl(url: string): Promise<ScrapeContext> {
       const rendered = await fetchWebsiteRendered(url);
       html = rendered.html;
       interceptedJson = rendered.interceptedJson;
+      broadJson = rendered.broadJson;
       playwrightCards = rendered.playwrightCards;
       usedPlaywright = true;
       const renderedCards = extractExhibitorCards(html, url);
@@ -1021,6 +1027,7 @@ export async function scrapeUrl(url: string): Promise<ScrapeContext> {
         rawCards: renderedCards,
         embeddedJSON: renderedEmbedded,
         interceptedJson,
+        broadJson,
         playwrightCards,
         html,
         url,
@@ -1031,5 +1038,5 @@ export async function scrapeUrl(url: string): Promise<ScrapeContext> {
     }
   }
 
-  return { isListing, rawCards, embeddedJSON, interceptedJson, playwrightCards, html, url, usedPlaywright };
+  return { isListing, rawCards, embeddedJSON, interceptedJson, broadJson, playwrightCards, html, url, usedPlaywright };
 }
