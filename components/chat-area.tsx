@@ -76,7 +76,7 @@ export default function ChatArea() {
         <div style={{
           background: 'linear-gradient(135deg, #6647fc, #eb6ea6)',
         }} className="p-2 rounded-lg">
-          <MessageCircle size={20} style={{ color: 'var(--text-main)' }} />
+          <MessageCircle size={20} style={{ color: '#ffffff' }} />
         </div>
         <h2 className="text-lg font-bold" style={{ color: 'var(--text-main)' }}>Conversation IA</h2>
       </div>
