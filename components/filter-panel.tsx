@@ -19,7 +19,8 @@ export default function FilterPanel() {
     <div style={{
       background: `linear-gradient(135deg, var(--bg-card), var(--bg-secondary))`,
       borderColor: 'rgba(102, 71, 252, 0.2)',
-    }} className="text-white p-8 rounded-2xl shadow-2xl border backdrop-blur-sm h-full flex flex-col transition-colors duration-200">
+    }} className="text-white p-8 rounded-2xl shadow-2xl border backdrop-blur-sm h-full flex flex-col /*transition-colors duration-200*/">
+
       <div className="flex items-center gap-2 mb-8">
         <Globe size={24} style={{ color: 'var(--accent)' }} />
         <h2 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Filtrer l'analyse</h2>
@@ -71,14 +72,16 @@ export default function FilterPanel() {
                         color: 'var(--text-main)',
                         boxShadow: '0 8px 20px rgba(235, 110, 166, 0.3)',
                         transform: 'scale(1.05)',
+                        transition: 'all 0.2s ease',
                       }
                     : {
                         backgroundColor: 'var(--bg-secondary)',
                         color: 'var(--text-secondary)',
                         borderColor: 'rgba(102, 71, 252, 0.3)',
+                        transition: 'all 0.2s ease',
                       }
                 }
-                className="px-3 py-3 rounded-lg font-semibold transition-all duration-200 flex flex-col items-center gap-2 text-sm border-2"
+                className="px-3 py-3 rounded-lg font-semibold flex flex-col items-center gap-2 text-sm border-2"
               >
                 <span className="text-2xl">{option.emoji}</span>
                 <span className="text-xs">{option.label}</span>
