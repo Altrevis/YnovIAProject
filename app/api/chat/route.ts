@@ -1,53 +1,21 @@
 import { streamText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 
-import { fetchWebsite } from "@/lib/api";
-import { parseWebsite } from "@/lib/parser";
-import { formatEntreprise } from "@/lib/formatter";
-
-const lmstudio = createOpenAI({
+const llm = createOpenAI({
   baseURL: 'http://127.0.0.1:1234/v1',
   apiKey: 'lm-studio',
 });
 
 export async function POST(req: Request) {
-  try {
-    const contents = await req.json();
-    console.log(contents);
-    const url = contents.messages
-      .find((m: any) => m.content.startsWith('http'))
-      ?.content
-      .replace(/\s+/g, '');
+  const { messages } = await req.json();
 
-    console.log(url);
+  const result = streamText({
+    model: llm('local-model'),
+    system: `Tu es un assistant IA conversationnel spécialisé dans les salons professionnels et l'extraction de données d'entreprises.
+Réponds en français de façon concise et utile.
+Si l'utilisateur mentionne une URL, dis-lui que tu vas l'analyser automatiquement dès qu'il l'envoie dans le chat.`,
+    messages,
+  });
 
-    if (!url) {
-      return Response.json(
-        { error: "URL invalide" },
-        { status: 400 }
-      );
-    }
-
-    // 1. récupérer le site
-    const html = await fetchWebsite(url);
-
-    // 2. parser
-    console.log("html: ", html, "\n");
-    const parsed = parseWebsite(html, url);
-
-    // 3. formatter
-    console.log("parsed: ", parsed, "\n");
-    const result = formatEntreprise(parsed);
-
-    console.log("result: ", result, "\n");
-    return Response.json(result);
-
-  } catch (error) {
-    console.error(error);
-
-    return Response.json(
-      { error: "Erreur serveur" },
-      { status: 500 }
-    );
-  }
+  return result.toDataStreamResponse();
 }
