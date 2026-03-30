@@ -2,7 +2,7 @@ import { streamText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 
 const lmstudio = createOpenAI({
-  baseURL: 'http://10.37.4.239:1234/v1',
+  baseURL: 'http://127.0.0.1:1234/v1',
   apiKey: 'lm-studio',
 });
 
