@@ -1,3 +1,7 @@
+// Note: This API route is for future backend integration
+// Currently, the application is 100% front-end as requested
+
+/*
 import { streamText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 
@@ -15,4 +19,11 @@ export async function POST(req: Request) {
   });
 
   return result.toDataStreamResponse();
+}
+*/
+
+export async function POST(req: Request) {
+  return new Response(JSON.stringify({ error: 'API endpoint not yet implemented' }), {
+    status: 501,
+  });
 }

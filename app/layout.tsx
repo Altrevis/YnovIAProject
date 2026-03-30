@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { ThemeProvider } from "./theme-provider";
 
 const inter = Inter({
   variable: "--font-geist-sans",
@@ -28,7 +29,12 @@ export default function RootLayout({
       lang="en"
       className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased overflow-x-hidden`}
     >
-      <body className="min-h-full flex flex-col overflow-x-hidden">{children}</body>
+      <body style={{
+        backgroundColor: 'var(--bg-main)',
+        color: 'var(--text-main)',
+      }} className="min-h-full flex flex-col overflow-x-hidden transition-colors duration-300">
+        <ThemeProvider>{children}</ThemeProvider>
+      </body>
     </html>
   );
 }

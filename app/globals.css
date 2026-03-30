@@ -2,6 +2,33 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* Shaarp.ai Color Palette */
+:root {
+  /* Primary Colors */
+  --primary: #6647fc;
+  --primary-dark: #3A1D99;
+  --gradient-start: #6647fc;
+  --gradient-end: #eb6ea6;
+  --gradient-end-alt: #f49ec6;
+
+  /* Theme Surfaces - Light */
+  --bg-main: #f7f7fc;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+
+  /* Theme Text - Light */
+  --text-main: #111122;
+  --text-secondary: #4d4d68;
+  --text-muted: #707089;
+  --text-on-gradient: #ffffff;
+  --link: #6647fc;
+  --link-hover: #eb6ea6;
+  
+  /* Accents */
+  --accent: #7C4DFF;
+  --accent-hover: #9F67FF;
+}
+
 /* Typography Improvements */
 html {
   -webkit-font-smoothing: antialiased;
@@ -69,47 +96,88 @@ body {
   animation: slideInRight 0.3s ease-out;
 }
 
-/* Custom Scrollbar */
+/* Custom Scrollbar - Shaarp Purple Gradient */
 .custom-scrollbar::-webkit-scrollbar {
   width: 8px;
 }
 
+.custom-scrollbar::-webkit-scrollbar:horizontal {
+  height: 8px;
+}
+
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.05);
+  background: rgba(107, 59, 255, 0.1);
   border-radius: 10px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, #3b82f6, #2563eb);
+  background: linear-gradient(to bottom, var(--gradient-start), var(--gradient-end));
   border-radius: 10px;
   transition: all 0.3s ease;
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(to bottom, #2563eb, #1d4ed8);
+.custom-scrollbar::-webkit-scrollbar-thumb:horizontal {
+  background: linear-gradient(to right, var(--gradient-start), var(--gradient-end));
 }
 
-/* Filter Panel Scrollbar */
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(to bottom, #9178ff, #f2a8c9);
+  filter: brightness(1.15) saturate(0.9);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:horizontal:hover {
+  background: linear-gradient(to right, #9178ff, #f2a8c9);
+  filter: brightness(1.15) saturate(0.9);
+}
+
+/* Filter Panel Scrollbar - Shaarp Accent */
 .filter-scrollbar::-webkit-scrollbar {
   width: 8px;
 }
 
+.filter-scrollbar::-webkit-scrollbar:horizontal {
+  height: 8px;
+}
+
 .filter-scrollbar::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(107, 59, 255, 0.15);
   border-radius: 10px;
 }
 
 .filter-scrollbar::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, #64748b, #475569);
+  background: linear-gradient(to bottom, var(--gradient-start), var(--gradient-end));
   border-radius: 10px;
   transition: all 0.3s ease;
 }
 
+.filter-scrollbar::-webkit-scrollbar-thumb:horizontal {
+  background: linear-gradient(to right, var(--gradient-start), var(--gradient-end));
+}
+
 .filter-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(to bottom, #475569, #334155);
+  background: linear-gradient(to bottom, #9178ff, #f2a8c9);
+  filter: brightness(1.15) saturate(0.9);
+}
+
+.filter-scrollbar::-webkit-scrollbar-thumb:horizontal:hover {
+  background: linear-gradient(to right, #9178ff, #f2a8c9);
+  filter: brightness(1.15) saturate(0.9);
 }
 
 @custom-variant dark (&:is(.dark *));
+
+.dark {
+  --bg-main: #0B0B0F;
+  --bg-secondary: #12121A;
+  --bg-card: #1A1A25;
+
+  --text-main: #FFFFFF;
+  --text-secondary: #B3B3C6;
+  --text-muted: #6F6F85;
+  --text-on-gradient: #FFFFFF;
+  --link: #bbaeff;
+  --link-hover: #f4a1c9;
+}
 
 @theme inline {
   --color-background: var(--background);
@@ -230,8 +298,14 @@ body {
   }
   body {
     @apply bg-background text-foreground;
+    background-color: var(--bg-main);
+    color: var(--text-main);
   }
   html {
     @apply font-sans;
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
   }
 }
