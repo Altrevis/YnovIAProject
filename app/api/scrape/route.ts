@@ -1,4 +1,4 @@
-import { scrapeExhibitors } from "@/lib/scraper";
+import { scrapeExhibitors } from "@/lib/tools/scraper";
 import { extractExhibitors } from "@/lib/ai-agent";
 
 export async function POST(req: Request) {
