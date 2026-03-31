@@ -165,9 +165,9 @@ export default function ResultsTable() {
                 placeholder="Rechercher..."
                 autoFocus
                 style={{
-                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                  color: 'var(--primary)',
-                  borderColor: 'rgba(255, 255, 255, 0.95)',
+                  backgroundColor: 'var(--bg-secondary)',
+                  color: 'var(--text-main)',
+                  borderColor: 'rgba(102, 71, 252, 0.3)',
                 }}
                 className="absolute right-10 border-2 rounded-lg px-3 py-1.5 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-white transition-colors duration-200 placeholder-opacity-50"
               />
@@ -246,7 +246,7 @@ export default function ResultsTable() {
             {/* Filter: Type */}
             <div className="flex items-center gap-3">
               <label style={{ color: '#ffffff' }} className="text-sm font-medium whitespace-nowrap">Type:</label>
-              <select style={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', color: 'var(--primary)' }} className="px-3 py-1 rounded-lg border-none outline-none text-sm font-medium">
+              <select style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-main)', borderColor: 'rgba(102, 71, 252, 0.3)' }} className="px-3 py-1 rounded-lg border-2 outline-none text-sm font-medium transition-colors duration-200">
                 <option>Tous</option>
                 <option>Personne</option>
                 <option>Entreprise</option>
@@ -256,7 +256,7 @@ export default function ResultsTable() {
             {/* Filter: Source */}
             <div className="flex items-center gap-3">
               <label style={{ color: '#ffffff' }} className="text-sm font-medium whitespace-nowrap">Source:</label>
-              <select style={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', color: 'var(--primary)' }} className="px-3 py-1 rounded-lg border-none outline-none text-sm font-medium transition-colors duration-200">
+              <select style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-main)', borderColor: 'rgba(102, 71, 252, 0.3)' }} className="px-3 py-1 rounded-lg border-2 outline-none text-sm font-medium transition-colors duration-200">
                 <option>Tous</option>
                 <option>LinkedIn</option>
                 <option>Twitter</option>
@@ -272,12 +272,20 @@ export default function ResultsTable() {
               <input
                 type="text"
                 inputMode="numeric"
-                maxLength={4}
+                maxLength={10}
                 value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                placeholder="AAAA"
-                style={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', color: 'var(--primary)' }}
-                className="w-20 px-3 py-1 rounded-lg border-none outline-none text-sm font-medium transition-colors duration-200 placeholder:opacity-60"
+                onChange={(e) => {
+                  let value = e.target.value.replace(/\D/g, '');
+                  if (value.length > 0) {
+                    if (value.length <= 2) value = value;
+                    else if (value.length <= 4) value = value.slice(0, 2) + '/' + value.slice(2);
+                    else value = value.slice(0, 2) + '/' + value.slice(2, 4) + '/' + value.slice(4, 8);
+                  }
+                  setDateFilter(value);
+                }}
+                placeholder="jj/mm/aaaa"
+                style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-main)', borderColor: 'rgba(102, 71, 252, 0.3)' }}
+                className="w-32 px-3 py-1 rounded-lg border-2 outline-none text-sm font-medium transition-colors duration-200 placeholder:opacity-60"
               />
             </div>
           </div>
