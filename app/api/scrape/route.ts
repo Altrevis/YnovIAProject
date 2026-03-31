@@ -9,10 +9,14 @@ import {
   fetchAllListingPages,
   enrichCards,
   extractFromDetailPage,
+  extractMwcDetailPage,
+  isMwcExhibitorPage,
+  extractAlgoliaConfig,
   discoverApiEndpoints,
   tryJsonEndpoint,
   isExhibitorLike,
   type Exhibitor,
+  type AlgoliaConfig,
 } from '@/lib/scraper';
 import { fetchWebsite } from '@/lib/api';
 
@@ -136,10 +140,10 @@ function isFooterContaminated(exhibitors: Exhibitor[]): boolean {
 function decontaminateSharedFields(exhibitors: Exhibitor[]): Exhibitor[] {
   if (exhibitors.length < 3) return exhibitors;
 
-  const fields: (keyof Exhibitor)[] = ['linkedin', 'twitter', 'email', 'telephone'];
   const toRemove = new Map<keyof Exhibitor, Set<string>>();
 
-  for (const field of fields) {
+  // linkedin/twitter/email/telephone: remove if shared by ≥25% of exhibitors (organizer footer)
+  for (const field of ['linkedin', 'twitter', 'email', 'telephone'] as (keyof Exhibitor)[]) {
     const counts = new Map<string, number>();
     for (const e of exhibitors) {
       const v = e[field];
@@ -150,6 +154,19 @@ function decontaminateSharedFields(exhibitors: Exhibitor[]): Exhibitor[] {
       if (count / exhibitors.length >= 0.25) dominated.add(val);
     }
     if (dominated.size > 0) toRemove.set(field, dominated);
+  }
+
+  // siteWeb: if more than 4 exhibitors share the same URL it's the organizer's site, not the company's
+  {
+    const counts = new Map<string, number>();
+    for (const e of exhibitors) {
+      if (e.siteWeb && e.siteWeb !== 'N/A') counts.set(e.siteWeb, (counts.get(e.siteWeb) ?? 0) + 1);
+    }
+    const dominated = new Set<string>();
+    for (const [val, count] of counts) {
+      if (count > 4) dominated.add(val);
+    }
+    if (dominated.size > 0) toRemove.set('siteWeb', dominated);
   }
 
   if (toRemove.size === 0) return exhibitors;
@@ -167,11 +184,8 @@ function decontaminateSharedFields(exhibitors: Exhibitor[]): Exhibitor[] {
 // Algolia nécessite un POST avec un body JSON — un GET retourne toujours 400.
 // On détecte l'URL, liste les index disponibles, et fait la requête correctement.
 
-async function queryAlgolia(rawUrl: string): Promise<Exhibitor[] | null> {
-  const parsed = new URL(rawUrl);
-  const apiKey = parsed.searchParams.get('x-algolia-api-key');
-  const appId  = parsed.searchParams.get('x-algolia-application-id');
-  if (!apiKey || !appId) return null;
+async function queryAlgoliaWithConfig(config: AlgoliaConfig): Promise<Exhibitor[] | null> {
+  const { appId, apiKey, indexName } = config;
 
   const headers = {
     'X-Algolia-API-Key': apiKey,
@@ -179,25 +193,9 @@ async function queryAlgolia(rawUrl: string): Promise<Exhibitor[] | null> {
     'Content-Type': 'application/json',
   };
 
-  // 1. Liste tous les index disponibles pour trouver celui des exposants
-  let indexName: string | null = null;
-  try {
-    const listRes = await fetch(`https://${appId}-dsn.algolia.net/1/indexes`, { headers });
-    if (listRes.ok) {
-      const data = await listRes.json() as { items?: { name: string }[] };
-      const items = data.items ?? [];
-      // Préférence : index avec mot-clé exhibitor/company/participant/startup
-      const preferred = items.find(i =>
-        /exhibitor|company|compan|participant|startup|stand|brand|product/i.test(i.name),
-      );
-      indexName = preferred?.name ?? items[0]?.name ?? null;
-    }
-  } catch { /* on essaie quand même avec un index générique */ }
-
-  // Si on n'a pas trouvé l'index, on essaie des noms communs
-  const candidates = indexName
-    ? [indexName]
-    : ['exhibitors', 'companies', 'participants', 'startups', 'products', 'brands'];
+  // Build the list of indexes to try: named index first, then common fallbacks
+  const candidates = [indexName, 'exhibitors', 'companies', 'participants', 'startups', 'products', 'brands']
+    .filter((v, i, a) => Boolean(v) && a.indexOf(v) === i);
 
   for (const idx of candidates) {
     try {
@@ -228,6 +226,14 @@ async function queryAlgolia(rawUrl: string): Promise<Exhibitor[] | null> {
   }
 
   return null;
+}
+
+async function queryAlgolia(rawUrl: string): Promise<Exhibitor[] | null> {
+  const parsed = new URL(rawUrl);
+  const apiKey = parsed.searchParams.get('x-algolia-api-key');
+  const appId  = parsed.searchParams.get('x-algolia-application-id');
+  if (!apiKey || !appId) return null;
+  return queryAlgoliaWithConfig({ appId, apiKey, indexName: '' });
 }
 
 // ─── Route ─────────────────────────────────────────────────────────────────────
@@ -305,6 +311,18 @@ Retourne les champs : nom, logo, description, siteWeb, stand, pays, linkedin, tw
       execute: async ({ url: listUrl }) => {
         try {
           const c = await scrapeUrl(listUrl);
+
+          // Priorité 0 : credentials Algolia détectés dans le HTML → interrogation API directe
+          // (plus fiable que Playwright : pas de blocage anti-bot, pas de timeout JS)
+          const algoliaConfig = extractAlgoliaConfig(c.html);
+          if (algoliaConfig) {
+            console.log('🔑 Algolia config found in page HTML:', algoliaConfig.appId, algoliaConfig.indexName);
+            const exhibitors = await queryAlgoliaWithConfig(algoliaConfig);
+            if (exhibitors && exhibitors.some(e => e.nom !== 'N/A')) {
+              const clean = decontaminateSharedFields(exhibitors);
+              return { success: true, count: clean.length, source: 'algolia-from-page', exhibitors: clean };
+            }
+          }
 
           // Priorité 1 : JSON XHR intercepté par Playwright
           if (c.interceptedJson.length > 0) {
@@ -389,7 +407,10 @@ Utilise quand l'URL pointe vers la page d'une entreprise spécifique (pas une li
       execute: async ({ url: detailUrl }) => {
         try {
           const html = await fetchWebsite(detailUrl);
-          const data = extractFromDetailPage(html, detailUrl);
+          // MWC Barcelona has a distinctive page structure — use dedicated parser
+          const data = isMwcExhibitorPage(detailUrl)
+            ? extractMwcDetailPage(html, detailUrl)
+            : extractFromDetailPage(html, detailUrl);
           const { _detailUrl: _, ...clean } = data;
           return { success: true, exhibitor: clean };
         } catch (e) {

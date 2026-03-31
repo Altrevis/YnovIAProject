@@ -955,7 +955,10 @@ async function fetchDetailBatch(
     batch.map(async ({ card, detailUrl }) => {
       try {
         const html = await fetchWebsite(detailUrl);
-        const detail = extractFromDetailPage(html, detailUrl);
+        // Use site-specific parsers when available
+        const detail = isMwcExhibitorPage(detailUrl)
+          ? extractMwcDetailPage(html, detailUrl)
+          : extractFromDetailPage(html, detailUrl);
         // Fusion : données détail prioritaires, sauf si la card avait déjà mieux
         return {
           ...BLANK,
@@ -1194,6 +1197,218 @@ export async function tryJsonEndpoint(apiUrl: string): Promise<Record<string, un
   } catch {
     return null;
   }
+}
+
+// ─── Algolia credential detection ─────────────────────────────────────────────
+
+export interface AlgoliaConfig {
+  appId: string;
+  apiKey: string;
+  indexName: string;
+}
+
+/**
+ * Scans page HTML for Algolia credentials (application ID + search API key + index name).
+ * Generic — works for any Algolia-powered site regardless of framework.
+ *
+ * Detection order:
+ *   1. JSON inside data-props / data-settings / data-algolia / data-search-config attributes
+ *   2. Individual data-algolia-* attributes on any element
+ *   3. Inline <script> content (variable assignments and object literals)
+ */
+export function extractAlgoliaConfig(html: string): AlgoliaConfig | null {
+  const $ = cheerio.load(html);
+  let appId = '', apiKey = '', indexName = '';
+
+  const s = (v: unknown): string => (v && typeof v === 'string' ? v.trim() : '');
+
+  // Strategy 1 — JSON in data-* attributes
+  $('[data-props],[data-settings],[data-algolia],[data-search-config],[data-widget-props]').each((_, el) => {
+    if (appId && apiKey) return false;
+    const $el = $(el);
+    for (const attr of ['data-props', 'data-settings', 'data-algolia', 'data-search-config', 'data-widget-props']) {
+      const raw = $el.attr(attr) || '';
+      if (!raw || !/algolia/i.test(raw)) continue;
+      try {
+        const obj = JSON.parse(raw) as Record<string, unknown>;
+        appId    = appId    || s(obj.algoliaAppId)         || s(obj.appId)         || s(obj.applicationId) || s(obj.app_id);
+        apiKey   = apiKey   || s(obj.algoliaSearchApiKey)  || s(obj.searchApiKey)  || s(obj.searchKey)     || s(obj.apiKey) || s(obj.api_key);
+        indexName = indexName || s(obj.indexName)           || s(obj.index)         || s(obj.algoliaIndex)  || s(obj.index_name);
+      } catch { /* malformed JSON, ignore */ }
+    }
+    // Also check flattened data-* attributes
+    if (!appId)     appId     = $el.attr('data-algolia-app-id')     || $el.attr('data-app-id')         || '';
+    if (!apiKey)    apiKey    = $el.attr('data-algolia-api-key')     || $el.attr('data-search-api-key') || '';
+    if (!indexName) indexName = $el.attr('data-algolia-index')       || $el.attr('data-index-name')     || '';
+  });
+
+  // Strategy 2 — inline <script> scanning
+  if (!appId || !apiKey) {
+    $('script:not([src])').each((_, el) => {
+      if (appId && apiKey) return false;
+      const text = $(el).html() || '';
+      if (!text || !/algolia/i.test(text) || text.length < 20) return;
+
+      const appMatch = text.match(/(?:appId|applicationId|app_id)\s*[:=]\s*['"`]([A-Z0-9]{6,12})['"`]/i);
+      const keyMatch = text.match(/(?:searchApiKey|searchOnlyApiKey|searchKey|apiKey|api_key)\s*[:=]\s*['"`]([a-f0-9]{20,40})['"`]/i);
+      const idxMatch = text.match(/(?:indexName|index_name|index)\s*[:=]\s*['"`]([^'"`\s]{3,60})['"`]/i);
+
+      if (appMatch && !appId)     appId     = appMatch[1];
+      if (keyMatch && !apiKey)    apiKey    = keyMatch[1];
+      if (idxMatch && !indexName) indexName = idxMatch[1];
+    });
+  }
+
+  if (!appId || !apiKey) return null;
+  return { appId, apiKey, indexName: indexName || 'exhibitors' };
+}
+
+// ─── MWC Barcelona specific parsers ───────────────────────────────────────────
+
+/** Returns true if the URL points to an MWC Barcelona exhibitor detail page. */
+export function isMwcExhibitorPage(url: string): boolean {
+  return /mwcbarcelona\.com(?:\/[a-z]{2,3})?\/exhibitors\/[^?#]+/i.test(url);
+}
+
+/**
+ * Parses an MWC Barcelona exhibitor detail page.
+ * Relies on stable MWC-specific IDs: #exhibitor-header, #maincontent .wysiwyg,
+ * and collapsible aside sections (#collapsible-content-social-links, #collapsible-content-interests).
+ * Falls back to JSON-LD ProfilePage structured data.
+ */
+export function extractMwcDetailPage(html: string, detailUrl: string): Partial<Exhibitor> {
+  const $ = cheerio.load(html);
+
+  // ── JSON-LD ProfilePage (parsed first — structured data is the most reliable source) ──
+  let jsonLdName = '', jsonLdDesc = '';
+  $('script[type="application/ld+json"]').each((_, el) => {
+    if (jsonLdName && jsonLdDesc) return false;
+    try {
+      const json = JSON.parse($(el).html() || '{}') as Record<string, unknown>;
+      if (json['@type'] === 'ProfilePage') {
+        const entity = (json.mainEntity ?? {}) as Record<string, unknown>;
+        if (!jsonLdName) jsonLdName = String(entity.name || '').trim();
+        if (!jsonLdDesc) jsonLdDesc = String(entity.description || '').trim();
+      }
+    } catch { /* malformed JSON-LD */ }
+  });
+
+  // ── Name ─────────────────────────────────────────────────────────────────────
+  const nom = pickFirst(
+    $('#exhibitor-header h1').text(),
+    $('h1').first().text(),
+    jsonLdName,
+    $('meta[property="og:title"]').attr('content'),
+  );
+
+  // ── Logo ─────────────────────────────────────────────────────────────────────
+  const logoRaw = pickFirst(
+    $('#exhibitor-logo').attr('src'),
+    $('#exhibitor-header img').first().attr('src'),
+    $('img[id*="logo"], img[class*="logo"]').first().attr('src'),
+    $('meta[property="og:image"]').attr('content'),
+  );
+  const logo = logoRaw !== 'N/A' ? resolveUrl(logoRaw, detailUrl) : 'N/A';
+
+  // ── Stand / Location ──────────────────────────────────────────────────────────
+  // MWC stores stands in #collapsible-content-locations > ul > li > a
+  // Text is e.g. "Hall 5 Stand 5C30". Collect all stands (some exhibitors have multiple).
+  const standLinks = $('#collapsible-content-locations li a')
+    .map((_, el) => $(el).text().replace(/\s+/g, ' ').trim())
+    .get()
+    .filter(t => t.length > 0 && t.length < 80);
+  const stand = standLinks.length > 0 ? standLinks.join(', ') : 'N/A';
+
+  // ── Description ──────────────────────────────────────────────────────────────
+  // Replace <br> tags with a space before extracting text so words don't run together.
+  const wysiwyg = $('#maincontent .wysiwyg');
+  wysiwyg.find('br').replaceWith(' ');
+  const dMain = wysiwyg.text().replace(/\s+/g, ' ').trim();
+
+  // Fallback candidates (in priority order after the primary path)
+  const descCandidates: string[] = [];
+  if (dMain.length > 10) descCandidates.push(dMain);
+
+  if (!dMain || dMain.length <= 10) {
+    // Any .wysiwyg inside <main>, <section>, <article>
+    $('main .wysiwyg, section .wysiwyg, article .wysiwyg').each((_, el) => {
+      $(el).find('br').replaceWith(' ');
+      const t = $(el).text().replace(/\s+/g, ' ').trim();
+      if (t.length > 10) { descCandidates.push(t); return false; }
+    });
+
+    // Content directly following an "Information" heading
+    $('h2, h3').each((_, heading) => {
+      if (/^\s*information\s*$/i.test($(heading).text())) {
+        const next = $(heading).nextAll('div, p, section, article').first();
+        const t = next.text().replace(/\s+/g, ' ').trim();
+        if (t.length > 10) descCandidates.push(t);
+        return false;
+      }
+    });
+
+    // JSON-LD description
+    if (jsonLdDesc.length > 10) descCandidates.push(jsonLdDesc);
+
+    // Meta description — last resort
+    const dMeta = $('meta[name="description"]').attr('content')?.trim() || '';
+    if (dMeta.length > 10) descCandidates.push(dMeta);
+  }
+
+  const description = descCandidates.length > 0
+    ? descCandidates.reduce((a, b) => a.length >= b.length ? a : b).substring(0, 800)
+    : (jsonLdDesc.substring(0, 800) || 'N/A');
+
+  // ── Website & social links ────────────────────────────────────────────────────
+  // MWC's "Contact & Links" section uses FontAwesome icons to identify each link type.
+  // fa-globe → website, fa-linkedin → LinkedIn, fa-x-twitter/fa-twitter → Twitter/X,
+  // fa-youtube, fa-instagram, fa-facebook, fa-tiktok → ignored (not in our model).
+  let siteWeb = 'N/A';
+  let linkedin = 'N/A';
+  let twitter = 'N/A';
+
+  $('#collapsible-content-social-links li, [id*="social-links"] li, [id*="contact-links"] li').each((_, li) => {
+    const $li = $(li);
+    const $a = $li.find('a[href]').first();
+    const href = $a.attr('href') || '';
+    if (!href) return;
+    // Identify link type by the icon class on the <i> element inside the <li>
+    const iconClass = $li.find('i[class*="fa-"]').attr('class') || '';
+    if (/fa-globe/i.test(iconClass) && siteWeb === 'N/A') {
+      siteWeb = href.split(/[?#]/)[0];
+    } else if (/fa-linkedin/i.test(iconClass) && linkedin === 'N/A') {
+      linkedin = href.split(/[?#]/)[0];
+    } else if (/fa-x-twitter|fa-twitter/i.test(iconClass) && twitter === 'N/A') {
+      twitter = href.split(/[?#]/)[0];
+    }
+  });
+
+  // Fallback for linkedin/twitter if not found via icon (generic link scan)
+  if (linkedin === 'N/A') linkedin = firstLink($, /linkedin\.com\/(?:company|in)\//i);
+  if (twitter === 'N/A')  twitter  = firstLink($, /(?:twitter\.com|x\.com)\//i);
+
+  // ── Categories / Interests ────────────────────────────────────────────────────
+  const catEls = $('#collapsible-content-interests a, [id*="interests"] a, [id*="categories"] a');
+  const categories = catEls
+    .map((_, el) => $(el).text().trim())
+    .get()
+    .filter(t => t.length > 0 && t.length < 80)
+    .join(', ') || 'N/A';
+
+  return {
+    nom,
+    description,
+    siteWeb,
+    logo,
+    stand,
+    pays:      'N/A',
+    linkedin,
+    twitter,
+    categories,
+    email:     'N/A',
+    telephone: 'N/A',
+    _detailUrl: detailUrl,
+  };
 }
 
 // ─── Exports finaux ────────────────────────────────────────────────────────────
