@@ -16,5 +16,6 @@ export async function POST(req: Request) {
     maxTokens: 600,
   });
 
+  console.log('📨 Messages reçus:', messages);
   return result.toDataStreamResponse();
 }

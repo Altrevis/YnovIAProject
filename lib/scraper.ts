@@ -24,9 +24,9 @@ const BLANK: Exhibitor = {
 };
 
 // ─── Configuration ─────────────────────────────────────────────────────────────
-const MAX_PAGES       = 5;   // pages de liste max à suivre
+const MAX_PAGES = 5;   // pages de liste max à suivre
 const MAX_DETAIL_FETCH = 150; // pages détail à fetcher (couvre les grandes listes)
-const DETAIL_BATCH    = 6;   // requêtes simultanées max
+const DETAIL_BATCH = 6;   // requêtes simultanées max
 
 // ─── URL helpers ───────────────────────────────────────────────────────────────
 
@@ -136,14 +136,14 @@ export function extractEmbeddedJSON(html: string): unknown[] {
       const json = JSON.parse(t);
       const found = findExhibitorArray(json);
       if (found.length > best.length) best = found;
-    } catch {}
+    } catch { }
   };
 
   $('script').each((_, el) => {
     const $el = $(el);
     const type = $el.attr('type') || '';
-    const id   = $el.attr('id') || '';
-    const raw  = $el.html() || '';
+    const id = $el.attr('id') || '';
+    const raw = $el.html() || '';
     if (!raw.trim()) return;
 
     if (type === 'application/ld+json' || id === '__NEXT_DATA__') { tryParse(raw); return; }
@@ -204,9 +204,9 @@ export function extractFromDetailPage(html: string, detailUrl: string): Partial<
   // (qui est souvent le banner promotionnel du salon, pas le logo exposant).
   const logoSelectors = [
     'img[class*="logo"]', 'img[class*="Logo"]',
-    'img[id*="logo"]',   'img[id*="Logo"]',
-    'img[alt*="logo"]',  'img[alt*="Logo"]',
-    'img[src*="logo"]',  'img[src*="Logo"]',
+    'img[id*="logo"]', 'img[id*="Logo"]',
+    'img[alt*="logo"]', 'img[alt*="Logo"]',
+    'img[src*="logo"]', 'img[src*="Logo"]',
     '.logo img', '#logo img',
     '[class*="logo"] img', '[id*="logo"] img',
   ];
@@ -256,7 +256,7 @@ export function extractFromDetailPage(html: string, detailUrl: string): Partial<
 
   // ── Téléphone ─────────────────────────────────────────────────────────────
   const contentText = $c('body').text().replace(/\s+/g, ' ');
-  const telHref  = firstLink($c, /^tel:/i);
+  const telHref = firstLink($c, /^tel:/i);
   const telRegex = contentText.match(/(?:\+|00)\d[\d\s\-().]{6,18}\d/);
   const telephone = telHref !== 'N/A'
     ? telHref.replace(/^tel:/i, '').trim()
@@ -345,8 +345,8 @@ export function extractFromDetailPage(html: string, detailUrl: string): Partial<
 
 const CARD_SELECTORS = [
   '[class*="exhibitor-card"]', '[class*="ExhibitorCard"]', '[class*="exhibitor_card"]',
-  '[class*="company-card"]',  '[class*="CompanyCard"]',
-  '[class*="participant-card"]','[class*="ParticipantCard"]',
+  '[class*="company-card"]', '[class*="CompanyCard"]',
+  '[class*="participant-card"]', '[class*="ParticipantCard"]',
   '[class*="booth-card"]',
   '[class*="exhibitor-item"]', '[class*="exhibitor_item"]',
   '[class*="company-item"]',
@@ -523,16 +523,16 @@ export function extractExhibitorCards(
       const rows = $table.find('tbody tr');
       if (rows.length < 3) return;
 
-      const nameIdx    = headerCells.findIndex(h => /name|nom|company|soci[eé]t[eé]|entreprise|exhibitor|sponsor/i.test(h));
-      const standIdx   = headerCells.findIndex(h => /stand|hall|booth|location|emplacement/i.test(h));
+      const nameIdx = headerCells.findIndex(h => /name|nom|company|soci[eé]t[eé]|entreprise|exhibitor|sponsor/i.test(h));
+      const standIdx = headerCells.findIndex(h => /stand|hall|booth|location|emplacement/i.test(h));
       const countryIdx = headerCells.findIndex(h => /country|pays|nation/i.test(h));
-      const catIdx     = headerCells.findIndex(h => /categ|sector|tag|type|industry/i.test(h));
+      const catIdx = headerCells.findIndex(h => /categ|sector|tag|type|industry/i.test(h));
 
       const tableItems: typeof items = [];
-      const tableSeen  = new Set<string>();
+      const tableSeen = new Set<string>();
 
       rows.each((_, row) => {
-        const $row  = $(row);
+        const $row = $(row);
         const cells = $row.find('td');
 
         let name = '';
@@ -551,11 +551,11 @@ export function extractExhibitorCards(
         if (tableSeen.has(key)) return;
         tableSeen.add(key);
 
-        const stand    = standIdx   >= 0 ? ($(cells[standIdx])?.text().trim()   || 'N/A') : 'N/A';
-        const pays     = countryIdx >= 0 ? ($(cells[countryIdx])?.text().trim() || 'N/A') : 'N/A';
-        const cats     = catIdx     >= 0 ? ($(cells[catIdx])?.text().trim()     || 'N/A') : 'N/A';
-        const href     = $row.find('a[href]').first().attr('href') || '';
-        const logo     = resolveUrl($row.find('img').first().attr('src') || '', baseUrl);
+        const stand = standIdx >= 0 ? ($(cells[standIdx])?.text().trim() || 'N/A') : 'N/A';
+        const pays = countryIdx >= 0 ? ($(cells[countryIdx])?.text().trim() || 'N/A') : 'N/A';
+        const cats = catIdx >= 0 ? ($(cells[catIdx])?.text().trim() || 'N/A') : 'N/A';
+        const href = $row.find('a[href]').first().attr('href') || '';
+        const logo = resolveUrl($row.find('img').first().attr('src') || '', baseUrl);
         const detailUrl = href ? resolveUrl(href, baseUrl) : null;
 
         tableItems.push({
@@ -580,10 +580,10 @@ export function extractExhibitorCards(
     const profileLinks: { name: string; logo: string; href: string }[] = [];
 
     $('a[href]').each((_, el) => {
-      const $el  = $(el);
-      const raw  = $el.attr('href') || '';
+      const $el = $(el);
+      const raw = $el.attr('href') || '';
       if (!raw) return;
-      const full  = raw.startsWith('http') ? raw : resolveUrl(raw, baseUrl);
+      const full = raw.startsWith('http') ? raw : resolveUrl(raw, baseUrl);
       const match = full.match(PROFILE_PATH_RE) || raw.match(PROFILE_PATH_RE);
       if (!match) return;
       // Extrait le dernier segment du chemin pour vérifier si c'est un slug générique
@@ -591,7 +591,7 @@ export function extractExhibitorCards(
       if (!slug || GENERIC_SLUG_RE.test(slug)) return;
 
       const imgEl = $el.find('img').first();
-      const name  = (imgEl.attr('alt') || $el.text()).trim().replace(/\s+/g, ' ');
+      const name = (imgEl.attr('alt') || $el.text()).trim().replace(/\s+/g, ' ');
       if (!name || name.length < 2 || name.length > 120) return;
 
       const logo = resolveUrl(imgEl.attr('src') || imgEl.attr('data-src') || '', baseUrl);
@@ -622,8 +622,8 @@ export function extractExhibitorCards(
       // Remonte jusqu'au container (figure, article, ou élément avec classe Item/Card/Wrapper)
       const $container = $img.closest('figure, article, [class*="Item"], [class*="Card"], [class*="Wrapper"]');
       const href = $container.find('a[href]').first().attr('href')
-                || $img.closest('a').attr('href')
-                || '';
+        || $img.closest('a').attr('href')
+        || '';
 
       // Catégorie : trouve le premier <span> ou <p> court dans le container
       const categories = $container.find('span, p')
@@ -642,7 +642,7 @@ export function extractExhibitorCards(
   if (items.length === 0) {
     $('ul, ol').each((_, listEl) => {
       if (items.length >= 4) return false;
-      const $list    = $(listEl);
+      const $list = $(listEl);
       const listItems = $list.children('li');
       if (listItems.length < 4) return;
 
@@ -670,13 +670,13 @@ export function extractExhibitorCards(
       if (/^\/(fr|en|de|es|it|pt|nl|about|contact|news|blog|home|accueil|legal|terms|privacy)\/$/i.test(commonPrefix[0] + '/')) return;
 
       listItems.each((_, li) => {
-        const $li   = $(li);
-        const $a    = $li.find('a[href]').first();
-        const href  = $a.attr('href') || '';
+        const $li = $(li);
+        const $a = $li.find('a[href]').first();
+        const href = $a.attr('href') || '';
         if (!href || getPrefix(href) !== commonPrefix[0]) return;
 
         const imgEl = $li.find('img').first();
-        const name  = (imgEl.attr('alt') || $a.text() || $li.text()).trim().replace(/\s+/g, ' ');
+        const name = (imgEl.attr('alt') || $a.text() || $li.text()).trim().replace(/\s+/g, ' ');
         if (!name || name.length < 2 || name.length > 120) return;
 
         const logo = resolveUrl(imgEl.attr('src') || imgEl.attr('data-src') || '', baseUrl);
@@ -726,7 +726,7 @@ export async function fetchAllListingPages(
   firstUrl: string,
 ): Promise<{ allCards: { card: Partial<Exhibitor>; detailUrl: string | null }[]; pagesCount: number }> {
   let html = firstHtml;
-  let url  = firstUrl;
+  let url = firstUrl;
   const allCards: { card: Partial<Exhibitor>; detailUrl: string | null }[] = [];
   const seenUrls = new Set<string>([firstUrl]);
   let page = 0;
@@ -742,7 +742,7 @@ export async function fetchAllListingPages(
 
     try {
       html = await fetchWebsite(nextUrl);
-      url  = nextUrl;
+      url = nextUrl;
     } catch {
       break;
     }
@@ -756,10 +756,10 @@ export async function fetchAllListingPages(
 export async function enrichCards(
   rawCards: { card: Partial<Exhibitor>; detailUrl: string | null }[],
 ): Promise<Exhibitor[]> {
-  const withUrl  = rawCards.filter(c => c.detailUrl !== null) as { card: Partial<Exhibitor>; detailUrl: string }[];
-  const noUrl    = rawCards.filter(c => c.detailUrl === null).map(c => ({ ...BLANK, ...c.card } as Exhibitor));
+  const withUrl = rawCards.filter(c => c.detailUrl !== null) as { card: Partial<Exhibitor>; detailUrl: string }[];
+  const noUrl = rawCards.filter(c => c.detailUrl === null).map(c => ({ ...BLANK, ...c.card } as Exhibitor));
 
-  const toFetch  = withUrl.slice(0, MAX_DETAIL_FETCH);
+  const toFetch = withUrl.slice(0, MAX_DETAIL_FETCH);
   const enriched: Exhibitor[] = [];
 
   for (let i = 0; i < toFetch.length; i += DETAIL_BATCH) {
@@ -821,10 +821,10 @@ export function buildSinglePageContext(html: string, url: string): string {
   const $ = cheerio.load(html);
   $('script,style,noscript,iframe,svg').remove();
 
-  const title   = $('title').text().trim();
-  const ogName  = $('meta[property="og:site_name"]').attr('content')?.trim() || '';
+  const title = $('title').text().trim();
+  const ogName = $('meta[property="og:site_name"]').attr('content')?.trim() || '';
   const metaDesc = $('meta[name="description"]').attr('content')?.trim() || '';
-  const ogImage  = $('meta[property="og:image"]').attr('content')?.trim() || '';
+  const ogImage = $('meta[property="og:image"]').attr('content')?.trim() || '';
 
   const links: string[] = [];
   $('a[href]').each((_, el) => {
@@ -838,9 +838,9 @@ export function buildSinglePageContext(html: string, url: string): string {
   return [
     `URL: ${url}`,
     `Titre: ${title}`,
-    ogName    ? `Nom (OG): ${ogName}` : '',
-    metaDesc  ? `Description meta: ${metaDesc}` : '',
-    ogImage   ? `Logo/Image: ${ogImage}` : '',
+    ogName ? `Nom (OG): ${ogName}` : '',
+    metaDesc ? `Description meta: ${metaDesc}` : '',
+    ogImage ? `Logo/Image: ${ogImage}` : '',
     links.length ? `Liens présents dans la page:\n${links.slice(0, 60).join('\n')}` : '',
     `Texte brut de la page:\n${bodyText}`,
   ].filter(Boolean).join('\n\n');
@@ -858,7 +858,7 @@ export function discoverApiEndpoints(html: string, baseUrl: string): string[] {
   const candidates: string[] = [];
   const add = (u: string) => {
     if (!u || seen.has(u)) return;
-    try { new URL(u); seen.add(u); candidates.push(u); } catch {}
+    try { new URL(u); seen.add(u); candidates.push(u); } catch { }
   };
 
   const cleanBase = baseUrl.split('?')[0];
@@ -897,7 +897,7 @@ export function discoverApiEndpoints(html: string, baseUrl: string): string[] {
     while ((m = re.exec(allScripts)) !== null) {
       const path = m[1];
       if (/exhibitor|company|compan|participant|sponsor|search|directory|exposant/i.test(path)) {
-        try { const resolved = resolveUrl(path, baseUrl); if (resolved !== 'N/A') add(resolved); } catch {}
+        try { const resolved = resolveUrl(path, baseUrl); if (resolved !== 'N/A') add(resolved); } catch { }
       }
     }
   }
@@ -928,7 +928,7 @@ export async function tryJsonEndpoint(apiUrl: string): Promise<Record<string, un
     if (!Array.isArray(arr)) {
       const d = data as Record<string, unknown>;
       arr = d?.data ?? d?.results ?? d?.items ?? d?.exhibitors
-          ?? d?.entries ?? d?.companies ?? d?.participants ?? d?.sponsors ?? null;
+        ?? d?.entries ?? d?.companies ?? d?.participants ?? d?.sponsors ?? null;
     }
     if (!Array.isArray(arr) || arr.length < 2) return null;
     if (!arr.some(isExhibitorLike)) return null;
@@ -959,6 +959,13 @@ export interface ScrapeContext {
 /**
  * Détecte si le HTML semble être un shell SPA vide (peu de texte visible, peu de liens).
  */
+function hasUsableListingData(html: string, url: string): boolean {
+  const cards = extractExhibitorCards(html, url);
+  const embedded = extractEmbeddedJSON(html);
+
+  return cards.length >= 5 || embedded.length > 0;
+}
+
 function isSpaShell(html: string): boolean {
   const $ = cheerio.load(html);
   $('script,style,noscript').remove();
@@ -975,68 +982,100 @@ export async function scrapeUrl(url: string): Promise<ScrapeContext> {
   let playwrightCards: PlaywrightCard[] = [];
   let usedPlaywright = false;
 
+  // -------------------------
+  // 1. Fetch initial HTML
+  // -------------------------
   try {
     html = await fetchWebsite(url);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    // Si la page est bloquée (403/Cloudflare) ou vide → tente Playwright directement
+
+    // Fallback direct Playwright si blocage réseau / anti-bot
     if (/403|429|RATE_LIMIT|cloudflare/i.test(msg)) {
       const rendered = await fetchWebsiteRendered(url);
-      html = rendered.html;
-      interceptedJson = rendered.interceptedJson;
-      broadJson = rendered.broadJson;
-      playwrightCards = rendered.playwrightCards;
-      usedPlaywright = true;
-    } else {
-      throw e;
-    }
-  }
 
-  // Si le fetch a réussi mais renvoie un SPA shell vide → fallback Playwright
-  if (!usedPlaywright && isSpaShell(html)) {
-    try {
-      const rendered = await fetchWebsiteRendered(url);
-      html = rendered.html;
-      interceptedJson = rendered.interceptedJson;
-      broadJson = rendered.broadJson;
-      playwrightCards = rendered.playwrightCards;
-      usedPlaywright = true;
-    } catch {
-      // Si Playwright échoue aussi, on continue avec le HTML statique
-    }
-  }
-
-  const rawCards     = extractExhibitorCards(html, url);
-  const embeddedJSON = extractEmbeddedJSON(html);
-  const isListing    = isListingPage(url, html, rawCards.length);
-
-  // Si c'est une page liste mais trop peu de cards trouvées en statique (<4),
-  // le contenu est probablement rendu côté client (SPA). On tente Playwright comme fallback.
-  if (!usedPlaywright && isListing && rawCards.length < 4) {
-    try {
-      const rendered = await fetchWebsiteRendered(url);
-      html = rendered.html;
-      interceptedJson = rendered.interceptedJson;
-      broadJson = rendered.broadJson;
-      playwrightCards = rendered.playwrightCards;
-      usedPlaywright = true;
-      const renderedCards = extractExhibitorCards(html, url);
-      const renderedEmbedded = extractEmbeddedJSON(html);
       return {
         isListing: true,
-        rawCards: renderedCards,
-        embeddedJSON: renderedEmbedded,
-        interceptedJson,
-        broadJson,
-        playwrightCards,
-        html,
+        rawCards: extractExhibitorCards(rendered.html, url),
+        embeddedJSON: extractEmbeddedJSON(rendered.html),
+        interceptedJson: rendered.interceptedJson,
+        broadJson: rendered.broadJson,
+        playwrightCards: rendered.playwrightCards,
+        html: rendered.html,
         url,
-        usedPlaywright,
+        usedPlaywright: true,
       };
-    } catch {
-      // Si Playwright échoue aussi, on continue avec le résultat statique vide
+    }
+
+    throw e;
+  }
+
+  // -------------------------
+  // 2. Détection listing
+  // -------------------------
+  const rawCards = extractExhibitorCards(html, url);
+  const embeddedJSON = extractEmbeddedJSON(html);
+  const isListing = isListingPage(url, html, rawCards.length);
+
+  // -------------------------
+  // 3. Fonction utilitaire
+  // -------------------------
+  function hasUsableListingData(html: string, url: string): boolean {
+    const cards = extractExhibitorCards(html, url);
+    const embedded = extractEmbeddedJSON(html);
+
+    return cards.length >= 5 || embedded.length > 0;
+  }
+
+  // -------------------------
+  // 4. Décision Playwright unique
+  // -------------------------
+  const shouldUsePlaywright =
+    isListing && !hasUsableListingData(html, url);
+
+  if (shouldUsePlaywright) {
+    console.log('🚀 No usable data → forcing Playwright');
+
+    try {
+      const rendered = await fetchWebsiteRendered(url);
+
+      html = rendered.html;
+      interceptedJson = rendered.interceptedJson;
+      broadJson = rendered.broadJson;
+      playwrightCards = rendered.playwrightCards;
+      usedPlaywright = true;
+    } catch (e) {
+      console.log('❌ Playwright failed, fallback to static HTML');
     }
   }
 
-  return { isListing, rawCards, embeddedJSON, interceptedJson, broadJson, playwrightCards, html, url, usedPlaywright };
+  // -------------------------
+  // 5. Re-extraction après Playwright si utilisé
+  // -------------------------
+  const finalRawCards = extractExhibitorCards(html, url);
+  const finalEmbeddedJSON = extractEmbeddedJSON(html);
+
+  // -------------------------
+  // 6. Logs debug
+  // -------------------------
+  console.log('--- SCRAPER DEBUG ---');
+  console.log('URL:', url);
+  console.log('Used Playwright:', usedPlaywright);
+  console.log('Cards:', finalRawCards.length);
+  console.log('Embedded JSON:', finalEmbeddedJSON.length);
+
+  // -------------------------
+  // 7. Return final context
+  // -------------------------
+  return {
+    isListing,
+    rawCards: finalRawCards,
+    embeddedJSON: finalEmbeddedJSON,
+    interceptedJson,
+    broadJson,
+    playwrightCards,
+    html,
+    url,
+    usedPlaywright,
+  };
 }

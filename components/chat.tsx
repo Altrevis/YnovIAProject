@@ -388,18 +388,20 @@ export default function Chat() {
       // ── Scraping mode ──────────────────────────────────────────────────────
       const scrapeId = `s-${Date.now()}`;
       const scrapeMsg: ScrapeMsg = { id: scrapeId, kind: 'scrape', role: 'assistant', userUrl: urlMatch[0], isLoading: true };
+      console.log('URL détectée :', urlMatch[0]);
       setMessages(prev => [...prev, scrapeMsg]);
-
       try {
         const res = await fetch('/api/scrape', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url: urlMatch[0] }),
         });
+        console.log('Status API:', res.status);
         const result: ScrapeResult = await res.json();
         setMessages(prev =>
           prev.map(m => m.id === scrapeId ? { ...m, isLoading: false, result } as ScrapeMsg : m),
         );
+        console.log('Résultat brut API:', result);
       } catch {
         setMessages(prev =>
           prev.map(m =>
