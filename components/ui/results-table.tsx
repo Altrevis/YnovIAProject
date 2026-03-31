@@ -172,7 +172,7 @@ export default function ResultsTable() {
                 className="absolute right-10 border-2 rounded-lg px-3 py-1.5 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-white transition-colors duration-200 placeholder-opacity-50"
               />
             )}
-            <button 
+            <button
               onClick={() => {
                 setIsSearchOpen(!isSearchOpen);
                 if (isSearchOpen) setSearchText('');
@@ -185,7 +185,7 @@ export default function ResultsTable() {
               <Search size={18} />
             </button>
           </div>
-          <button 
+          <button
             onClick={() => setIsFilterOpen(!isFilterOpen)}
             className="p-2 rounded-lg transition-all duration-200"
             style={{ color: '#ffffff' }}

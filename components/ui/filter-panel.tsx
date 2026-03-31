@@ -5,12 +5,28 @@ import { Globe, BarChart3, Zap } from 'lucide-react';
 
 export default function FilterPanel() {
   const [url, setUrl] = useState('');
-  const [entityType, setEntityType] = useState('all');
+  const [selectedEntities, setSelectedEntities] = useState(['all']);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  const handleEntityToggle = (value) => {
+    if (value === 'all') {
+      setSelectedEntities(['all']);
+    } else {
+      let newSelected = selectedEntities.includes(value)
+        ? selectedEntities.filter(e => e !== value)
+        : [...selectedEntities.filter(e => e !== 'all'), value];
+
+      if (newSelected.length === 0) {
+        newSelected = ['all'];
+      }
+      setSelectedEntities(newSelected);
+    }
+  };
 
   const handleAnalyze = () => {
     if (!url.trim()) return;
     setIsAnalyzing(true);
+    const entityType = selectedEntities.includes('all') ? 'all' : selectedEntities.join(', ');
     console.log('Analyzing:', { url, entityType });
     setTimeout(() => setIsAnalyzing(false), 1500);
   };
@@ -25,7 +41,7 @@ export default function FilterPanel() {
         <Globe size={24} style={{ color: 'var(--accent)' }} />
         <h2 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Filtrer l'analyse</h2>
       </div>
-      
+
       <div className="space-y-6 flex-1 flex flex-col overflow-y-auto pb-4 filter-scrollbar pr-2">
         {/* URL Input */}
         <div>
@@ -64,9 +80,9 @@ export default function FilterPanel() {
             ].map((option) => (
               <button
                 key={option.value}
-                onClick={() => setEntityType(option.value)}
+                onClick={() => handleEntityToggle(option.value)}
                 style={
-                  entityType === option.value
+                  selectedEntities.includes(option.value)
                     ? {
                         background: `linear-gradient(135deg, #6647fc, #eb6ea6)`,
                         color: 'var(--text-main)',
@@ -118,8 +134,8 @@ export default function FilterPanel() {
           onClick={handleAnalyze}
           disabled={isAnalyzing || !url.trim()}
           style={{
-            background: isAnalyzing || !url.trim() 
-              ? 'var(--bg-secondary)' 
+            background: isAnalyzing || !url.trim()
+              ? 'var(--bg-secondary)'
               : `linear-gradient(135deg, #6647fc, #eb6ea6)`,
             color: 'var(--text-main)',
             opacity: isAnalyzing || !url.trim() ? 0.5 : 1,

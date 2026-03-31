@@ -12,7 +12,7 @@ export default function InputArea() {
 
     setIsLoading(true);
     console.log('Sending message:', message);
-    
+
     // Simulate sending
     setTimeout(() => {
       setMessage('');
@@ -66,7 +66,7 @@ export default function InputArea() {
           }}
           placeholder-color="rgba(255, 255, 255, 0.5)"
         />
-        
+
         <button
           onClick={handleSend}
           disabled={isLoading || !message.trim()}

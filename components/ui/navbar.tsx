@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useTheme } from '@/app/theme-provider';
 import { useEffect, useRef, useState } from 'react';
 import { Moon, Sun } from 'lucide-react';
@@ -110,26 +111,42 @@ export default function Navbar() {
               <p className="text-xs font-medium" style={{ color: 'var(--text-on-gradient)' }}>Analyse intelligente en temps réel</p>
             </div>
           </div>
-          
-          {/* Theme Toggle Button */}
-          <button
-            onClick={toggleTheme}
-            className="p-2 rounded-lg transition-colors duration-200 flex items-center justify-center"
-            style={{
-              backgroundColor: 'rgba(255, 255, 255, 0.18)',
-              opacity: 0.9,
-              color: 'var(--text-on-gradient)',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.28)')}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.18)')}
-            aria-label="Toggle theme"
-          >
-            {theme === 'light' ? (
-              <Moon size={20} className="text-white" />
-            ) : (
-              <Sun size={20} className="text-yellow-300" />
-            )}
-          </button>
+
+          <div className="flex items-center gap-3">
+            {/* Legal Link */}
+            <Link
+              href="/legal"
+              className="px-3 py-2 rounded-lg transition-all duration-200 text-sm font-medium hover:scale-105 active:scale-95"
+              style={{
+                backgroundColor: 'rgba(255, 255, 255, 0.12)',
+                color: 'var(--text-on-gradient)',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.12)')}
+            >
+              Mentions légales
+            </Link>
+
+            {/* Theme Toggle Button */}
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-lg transition-colors duration-200 flex items-center justify-center"
+              style={{
+                backgroundColor: 'rgba(255, 255, 255, 0.18)',
+                opacity: 0.9,
+                color: 'var(--text-on-gradient)',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.28)')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.18)')}
+              aria-label="Toggle theme"
+            >
+              {theme === 'light' ? (
+                <Moon size={20} className="text-white" />
+              ) : (
+                <Sun size={20} className="text-yellow-300" />
+              )}
+            </button>
+          </div>
         </div>
       </div>
       </nav>

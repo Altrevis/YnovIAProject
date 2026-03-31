@@ -1,10 +1,10 @@
 'use client';
 
-import Navbar from '@/components/navbar';
-import FilterPanel from '@/components/filter-panel';
-import ChatArea from '@/components/chat-area';
-import InputArea from '@/components/input-area';
-import ResultsTable from '@/components/results-table';
+import Navbar from '@/components/ui/navbar';
+import FilterPanel from '@/components/ui/filter-panel';
+import ChatArea from '@/components/ui/chat-area';
+import InputArea from '@/components/ui/input-area';
+import ResultsTable from '@/components/ui/results-table';
 
 export default function Home() {
   return (

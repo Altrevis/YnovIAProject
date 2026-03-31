@@ -80,7 +80,7 @@ export default function ChatArea() {
         </div>
         <h2 className="text-lg font-bold" style={{ color: 'var(--text-main)' }}>Conversation IA</h2>
       </div>
-      
+
       <div className="flex-1 overflow-y-auto space-y-2 pr-3 custom-scrollbar">
         {messages.length === 0 ? (
           <div className="h-full flex items-center justify-center">
@@ -99,7 +99,7 @@ export default function ChatArea() {
               <div
                 className="max-w-lg px-4 py-2 rounded-2xl shadow-md transition-[background-color,color,border-color,box-shadow] duration-200 hover:shadow-lg"
                 style={{
-                  background: message.role === 'user' 
+                  background: message.role === 'user'
                     ? 'linear-gradient(135deg, #6647fc, #eb6ea6)'
                     : `var(--bg-card)`,
                   color: message.role === 'user' ? '#ffffff' : 'var(--text-main)',
@@ -112,9 +112,9 @@ export default function ChatArea() {
                 <span className="text-xs mt-2 block" style={{
                   color: message.role === 'user' ? 'rgba(255, 255, 255, 0.82)' : 'var(--text-secondary)'
                 }}>
-                  {message.timestamp.toLocaleTimeString('fr-FR', { 
-                    hour: '2-digit', 
-                    minute: '2-digit' 
+                  {message.timestamp.toLocaleTimeString('fr-FR', {
+                    hour: '2-digit',
+                    minute: '2-digit'
                   })}
                 </span>
               </div>
