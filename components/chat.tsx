@@ -106,6 +106,39 @@ function downloadExcelXML(rows: Exhibitor[], filename: string) {
 
 type SortDir = 'asc' | 'desc';
 
+// ─── Logo helpers ─────────────────────────────────────────────────────────────
+
+function initials(nom: string): string {
+  return nom
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(w => w[0].toUpperCase())
+    .join('');
+}
+
+function LogoPlaceholder({ nom }: { nom: string }) {
+  return (
+    <span className="flex items-center justify-center h-8 w-8 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-300 text-[10px] font-bold select-none">
+      {initials(nom) || '?'}
+    </span>
+  );
+}
+
+function LogoCell({ logo, nom }: { logo: string; nom: string }) {
+  const [failed, setFailed] = useState(false);
+  const proxied = `/api/image-proxy?url=${encodeURIComponent(logo)}`;
+  if (failed) return <LogoPlaceholder nom={nom} />;
+  return (
+    <img
+      src={proxied}
+      alt={nom || ''}
+      className="h-8 w-auto max-w-[64px] object-contain rounded"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function ExhibitorTable({ exhibitors }: { exhibitors: Exhibitor[] }) {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<keyof Exhibitor>('nom');
@@ -173,6 +206,9 @@ function ExhibitorTable({ exhibitors }: { exhibitors: Exhibitor[] }) {
         <table className="min-w-full text-xs">
           <thead>
             <tr className="bg-zinc-100 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700">
+              <th className="px-3 py-2 text-left font-semibold text-zinc-600 dark:text-zinc-300 whitespace-nowrap uppercase tracking-wide">
+                Logo
+              </th>
               {FIELDS.slice(0, 8).map(({ label, key }) => (
                 <th
                   key={key}
@@ -190,6 +226,13 @@ function ExhibitorTable({ exhibitors }: { exhibitors: Exhibitor[] }) {
                 key={i}
                 className="border-b border-zinc-100 dark:border-zinc-800 last:border-0 hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
               >
+                <td className="px-3 py-2">
+                  {ex.logo && ex.logo !== 'N/A' ? (
+                    <LogoCell logo={ex.logo} nom={ex.nom} />
+                  ) : (
+                    <LogoPlaceholder nom={ex.nom} />
+                  )}
+                </td>
                 {FIELDS.slice(0, 8).map(({ key }) => {
                   const val = ex[key] || 'N/A';
                   return (

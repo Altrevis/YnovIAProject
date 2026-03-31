@@ -130,6 +130,39 @@ function isFooterContaminated(exhibitors: Exhibitor[]): boolean {
   return pageTitleLike.length / exhibitors.length >= 0.4;
 }
 
+// ─── Nettoyage des champs partagés (organisateur du salon) ───────────────────
+// Si un LinkedIn, Twitter, email ou téléphone apparaît chez >25% des exposants,
+// c'est celui du salon (présent dans le footer de chaque page détail) → on l'efface.
+function decontaminateSharedFields(exhibitors: Exhibitor[]): Exhibitor[] {
+  if (exhibitors.length < 3) return exhibitors;
+
+  const fields: (keyof Exhibitor)[] = ['linkedin', 'twitter', 'email', 'telephone'];
+  const toRemove = new Map<keyof Exhibitor, Set<string>>();
+
+  for (const field of fields) {
+    const counts = new Map<string, number>();
+    for (const e of exhibitors) {
+      const v = e[field];
+      if (v && v !== 'N/A') counts.set(v, (counts.get(v) ?? 0) + 1);
+    }
+    const dominated = new Set<string>();
+    for (const [val, count] of counts) {
+      if (count / exhibitors.length >= 0.25) dominated.add(val);
+    }
+    if (dominated.size > 0) toRemove.set(field, dominated);
+  }
+
+  if (toRemove.size === 0) return exhibitors;
+
+  return exhibitors.map(e => {
+    const cleaned = { ...e };
+    for (const [field, vals] of toRemove) {
+      if (vals.has(cleaned[field] ?? '')) (cleaned as Record<string, string>)[field] = 'N/A';
+    }
+    return cleaned;
+  });
+}
+
 // ─── Handler Algolia ──────────────────────────────────────────────────────────
 // Algolia nécessite un POST avec un body JSON — un GET retourne toujours 400.
 // On détecte l'URL, liste les index disponibles, et fait la requête correctement.
@@ -213,7 +246,7 @@ export async function POST(req: Request) {
   if (/\.json(\?|$)/i.test(url) || /\/api\//i.test(url)) {
     const jsonData = await tryJsonEndpoint(url);
     if (jsonData && jsonData.length >= 1) {
-      const exhibitors = jsonData.map(mapRawToExhibitor);
+      const exhibitors = decontaminateSharedFields(jsonData.map(mapRawToExhibitor));
       const hasRealData = exhibitors.some(e => e.nom !== 'N/A');
       if (hasRealData) {
         return Response.json({ type: 'list', exhibitors, count: exhibitors.length, source: 'direct-json' });
@@ -233,7 +266,8 @@ export async function POST(req: Request) {
   if (/algolia\.net\/1\/indexes/i.test(url)) {
     const exhibitors = await queryAlgolia(url);
     if (exhibitors && exhibitors.length > 0) {
-      return Response.json({ type: 'list', exhibitors, count: exhibitors.length, source: 'algolia' });
+      const clean = decontaminateSharedFields(exhibitors);
+      return Response.json({ type: 'list', exhibitors: clean, count: clean.length, source: 'algolia' });
     }
     return Response.json(
       { error: 'Impossible de récupérer les données Algolia. L\'index est peut-être vide ou l\'API key manque de permissions.' },
@@ -280,7 +314,7 @@ Retourne les champs : nom, logo, description, siteWeb, stand, pays, linkedin, tw
             if (best) {
               const exhibitors = best.map(mapRawToExhibitor);
               if (exhibitors.some(e => e.nom !== 'N/A'))
-                return { success: true, count: exhibitors.length, source: 'playwright-intercepted', exhibitors };
+                return { success: true, count: exhibitors.length, source: 'playwright-intercepted', exhibitors: decontaminateSharedFields(exhibitors) };
             }
           }
 
@@ -302,7 +336,7 @@ Retourne les champs : nom, logo, description, siteWeb, stand, pays, linkedin, tw
               e.telephone !== 'N/A' || e.stand !== 'N/A' || e.linkedin !== 'N/A',
             );
             if (!isFooterContaminated(enriched) && hasDeepData) {
-              const clean = enriched.map(({ _detailUrl: _, ...rest }) => rest as Exhibitor);
+              const clean = decontaminateSharedFields(enriched.map(({ _detailUrl: _, ...rest }) => rest as Exhibitor));
               return { success: true, count: clean.length, source: 'playwright-dom', exhibitors: clean };
             }
           }
@@ -312,14 +346,14 @@ Retourne les champs : nom, logo, description, siteWeb, stand, pays, linkedin, tw
           if (allCards.length >= 2) {
             const enriched = await enrichCards(allCards);
             if (!isFooterContaminated(enriched)) {
-              const clean = enriched.map(({ _detailUrl: _, ...rest }) => rest as Exhibitor);
+              const clean = decontaminateSharedFields(enriched.map(({ _detailUrl: _, ...rest }) => rest as Exhibitor));
               return { success: true, count: clean.length, source: 'cheerio+detail', exhibitors: clean };
             }
           }
 
           // Priorité 4 : JSON embarqué (__NEXT_DATA__, ld+json)
           if (c.embeddedJSON.length >= 2) {
-            const exhibitors = (c.embeddedJSON as Record<string, unknown>[]).map(mapRawToExhibitor);
+            const exhibitors = decontaminateSharedFields((c.embeddedJSON as Record<string, unknown>[]).map(mapRawToExhibitor));
             if (exhibitors.some(e => e.nom !== 'N/A'))
               return { success: true, count: exhibitors.length, source: 'json-embedded', exhibitors };
           }
@@ -328,7 +362,7 @@ Retourne les champs : nom, logo, description, siteWeb, stand, pays, linkedin, tw
           if (c.broadJson.length > 0) {
             const candidates = c.broadJson.filter(arr => arr.length >= 5).sort((a, b) => b.length - a.length);
             for (const arr of candidates) {
-              const exhibitors = arr.map(mapRawToExhibitor);
+              const exhibitors = decontaminateSharedFields(arr.map(mapRawToExhibitor));
               if (exhibitors.some(e => e.nom !== 'N/A'))
                 return { success: true, count: exhibitors.length, source: 'playwright-broad-json', exhibitors };
             }
