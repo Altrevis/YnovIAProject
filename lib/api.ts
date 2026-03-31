@@ -12,52 +12,95 @@ function randomUA(): string {
     return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
 
-export async function fetchWebsite(url: string, retries = 2): Promise<string> {
+export async function fetchWebsite(url: string, retries = 3): Promise<string> {
     const attempt = async (): Promise<string> => {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 20_000);
+        const timeout = setTimeout(() => controller.abort(), 25_000);
 
         try {
             const res = await fetch(url, {
                 signal: controller.signal,
                 headers: {
                     'User-Agent': randomUA(),
-                    'Accept-Encoding': 'gzip, deflate',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                    'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                    'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7,es;q=0.6',
                     'Cache-Control': 'no-cache',
                     'Pragma': 'no-cache',
+                    'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+                    'Sec-Ch-Ua-Mobile': '?0',
+                    'Sec-Ch-Ua-Platform': '"Windows"',
                     'Sec-Fetch-Dest': 'document',
                     'Sec-Fetch-Mode': 'navigate',
                     'Sec-Fetch-Site': 'none',
                     'Sec-Fetch-User': '?1',
                     'Upgrade-Insecure-Requests': '1',
                     'DNT': '1',
+                    'Connection': 'keep-alive',
+                    'Keep-Alive': '300',
                 },
                 redirect: 'follow',
+                // Important pour eviter les redirects infinies
+                method: 'GET',
             });
-            console.log('STATUS:', res.status);
-            console.log('URL:', url);
-            if (res.status === 429) throw new Error('RATE_LIMIT');
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            
+            console.log('📡 Fetch:', url.substring(0, 60), '→', res.status);
+            
+            if (res.status === 429) {
+                throw new Error('RATE_LIMIT: Service temporarily unavailable');
+            }
+            if (res.status === 403) {
+                throw new Error('403_FORBIDDEN: Access blocked by server protection');
+            }
+            if (res.status === 401) {
+                throw new Error('401_UNAUTHORIZED: Authentication required');
+            }
+            if (!res.ok) {
+                throw new Error(`HTTP_${res.status}: ${res.statusText}`);
+            }
 
-            return await res.text();
+            const content = await res.text();
+            if (!content || content.length < 100) {
+                throw new Error('EMPTY_RESPONSE: Server returned empty or minimal content');
+            }
+
+            return content;
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            
+            // Timeouts et erreurs réseau
+            if (/timeout|abort|network|fetch|econnrefused/i.test(msg)) {
+                throw new Error('NETWORK_ERROR: ' + msg);
+            }
+            
+            throw err;
         } finally {
             clearTimeout(timeout);
         }
     };
 
+    let lastError: Error = new Error('Unknown error');
+    
     for (let i = 0; i <= retries; i++) {
         try {
             return await attempt();
         } catch (err) {
+            lastError = err instanceof Error ? err : new Error(String(err));
             const isLast = i === retries;
-            if (isLast) throw err;
-            await new Promise(r => setTimeout(r, 1500 * (i + 1)));
+            
+            console.log(`⏳ Retry ${i + 1}/${retries + 1}:`, lastError.message);
+            
+            if (isLast) {
+                throw lastError;
+            }
+            
+            // Délai progressif avec jitter
+            const delay = 1500 * (i + 1) + Math.random() * 1000;
+            await new Promise(r => setTimeout(r, delay));
         }
     }
 
-    throw new Error('fetchWebsite: unreachable');
+    throw lastError;
 }
 
 export interface PlaywrightCard {
@@ -85,6 +128,17 @@ export interface RenderedResult {
  *   - les réponses JSON d'API interceptées pendant le chargement
  */
 export async function fetchWebsiteRendered(url: string): Promise<RenderedResult> {
+    console.log('Attempting fetchWebsiteRendered (fallback):', url);
+    
+    // Si Playwright n'est pas disponible, retourner une erreur explicite
+    if (!chromium) {
+        throw new Error(
+            'Playwright Chromium not available. ' +
+            'To use dynamic rendering: npx playwright install. ' +
+            'For now, URL must return HTML with data embedded or in network responses.'
+        );
+    }
+
     const browser = await chromium.launch({
         headless: true,
         args: [

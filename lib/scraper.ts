@@ -1460,24 +1460,42 @@ export async function scrapeUrl(url: string): Promise<ScrapeContext> {
   // -------------------------
   try {
     html = await fetchWebsite(url);
+    console.log('✅ HTML fetched successfully');
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    console.log('❌ fetchWebsite failed:', msg);
 
     // Fallback direct Playwright si blocage réseau / anti-bot
-    if (/403|429|RATE_LIMIT|cloudflare/i.test(msg)) {
-      const rendered = await fetchWebsiteRendered(url);
+    if (/403|429|RATE_LIMIT|FORBIDDEN|blocked|cloudflare|NETWORK_ERROR/i.test(msg)) {
+      console.log('🔄 Attempting Playwright (protected site detected)...');
+      try {
+        const rendered = await fetchWebsiteRendered(url);
 
-      return {
-        isListing: true,
-        rawCards: extractExhibitorCards(rendered.html, url),
-        embeddedJSON: extractEmbeddedJSON(rendered.html),
-        interceptedJson: rendered.interceptedJson,
-        broadJson: rendered.broadJson,
-        playwrightCards: rendered.playwrightCards,
-        html: rendered.html,
-        url,
-        usedPlaywright: true,
-      };
+        return {
+          isListing: true,
+          rawCards: extractExhibitorCards(rendered.html, url),
+          embeddedJSON: extractEmbeddedJSON(rendered.html),
+          interceptedJson: rendered.interceptedJson,
+          broadJson: rendered.broadJson,
+          playwrightCards: rendered.playwrightCards,
+          html: rendered.html,
+          url,
+          usedPlaywright: true,
+        };
+      } catch (playwrightErr) {
+        const pwMsg = playwrightErr instanceof Error ? playwrightErr.message : String(playwrightErr);
+        console.error('❌ Both fetchWebsite and Playwright failed');
+        console.error('Original error:', msg);
+        console.error('Playwright error:', pwMsg);
+        
+        throw new Error(
+          `Cannot access ${url}:\n` +
+          `- Direct fetch: ${msg}\n` +
+          `- Playwright: ${pwMsg}\n` +
+          `\nTroubleshooting: If Playwright unavailable, ensure "npx playwright install" runs. ` +
+          `For Cloudflare/WAF protection, try with a residential proxy or browser extension.`
+        );
+      }
     }
 
     throw e;
@@ -1507,7 +1525,7 @@ export async function scrapeUrl(url: string): Promise<ScrapeContext> {
     isListing && !hasUsableListingData(html, url);
 
   if (shouldUsePlaywright) {
-    console.log('🚀 No usable data → forcing Playwright');
+    console.log('🚀 No usable data in HTML → forcing Playwright');
 
     try {
       const rendered = await fetchWebsiteRendered(url);
@@ -1518,7 +1536,8 @@ export async function scrapeUrl(url: string): Promise<ScrapeContext> {
       playwrightCards = rendered.playwrightCards;
       usedPlaywright = true;
     } catch (e) {
-      console.log('❌ Playwright failed, fallback to static HTML');
+      console.log('❌ Playwright unavailable, continuing with static HTML');
+      console.log('Error:', e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -1536,6 +1555,8 @@ export async function scrapeUrl(url: string): Promise<ScrapeContext> {
   console.log('Used Playwright:', usedPlaywright);
   console.log('Cards:', finalRawCards.length);
   console.log('Embedded JSON:', finalEmbeddedJSON.length);
+  console.log('Intercepted APIs:', interceptedJson.length);
+  console.log('Broad JSON:', broadJson.length);
 
   // -------------------------
   // 7. Return final context
