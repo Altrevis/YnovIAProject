@@ -1,5 +1,6 @@
-import { generateText } from 'ai';
+import { generateText, tool } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
+import { z } from 'zod';
 
 // Autorise jusqu'à 120 secondes pour les pages SPA (Playwright prend ~30-40s)
 export const maxDuration = 120;
@@ -7,85 +8,19 @@ import {
   scrapeUrl,
   fetchAllListingPages,
   enrichCards,
-  buildSinglePageContext,
   extractFromDetailPage,
   discoverApiEndpoints,
   tryJsonEndpoint,
   isExhibitorLike,
   type Exhibitor,
 } from '@/lib/scraper';
+import { fetchWebsite } from '@/lib/api';
 
+// ─── LLM agentique ────────────────────────────────────────────────────────────
 const llm = createOpenAI({
   baseURL: 'http://127.0.0.1:1234/v1',
   apiKey: 'lm-studio',
 });
-
-// ─── Prompt anti-hallucination strict ─────────────────────────────────────────
-
-const FIELDS_SCHEMA = `{
-  "nom": "...",
-  "description": "...",
-  "siteWeb": "...",
-  "logo": "...",
-  "stand": "...",
-  "pays": "...",
-  "linkedin": "...",
-  "twitter": "...",
-  "categories": "...",
-  "email": "...",
-  "telephone": "..."
-}`;
-
-const ANTI_HALLUCINATION = `
-RÈGLES ABSOLUES — NE JAMAIS ENFREINDRE :
-1. N'invente AUCUNE information. Chaque valeur retournée DOIT être literalement présente dans le texte fourni.
-2. Si une information n'est pas explicitement dans le texte, écris "N/A". JAMAIS de supposition, jamais de complétion.
-3. Ne génère pas de données vraisemblables. Une donnée "probable" mais non présente = "N/A".
-4. Les URLs (siteWeb, logo, linkedin, twitter) doivent être copiées mot pour mot depuis les liens trouvés.
-5. Une description inventée ou paraphrasée = "N/A". Utilise uniquement le texte vu dans la page.
-6. Retourne UNIQUEMENT le JSON demandé. Pas de commentaire, pas de markdown, pas de texte autour.`;
-
-const SINGLE_SYSTEM = `Tu es un extracteur de données d'entreprises. Tu reçois le contenu brut d'une page web.
-Retourne UNIQUEMENT un objet JSON valide, sans markdown, sans texte autour.
-Champs à remplir :
-${FIELDS_SCHEMA}
-${ANTI_HALLUCINATION}`;
-
-// ─── Parse JSON depuis la réponse Mistral ──────────────────────────────────────
-
-function extractJSON(text: string): unknown | null {
-  const t = text.trim();
-  try { return JSON.parse(t); } catch {}
-  const md = t.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (md) { try { return JSON.parse(md[1].trim()); } catch {} }
-  const arr = t.match(/\[[\s\S]*\]/);
-  if (arr) { try { return JSON.parse(arr[0]); } catch {} }
-  const obj = t.match(/\{[\s\S]*\}/);
-  if (obj) { try { return JSON.parse(obj[0]); } catch {} }
-  return null;
-}
-
-// ─── Post-traitement : remplace les "N/A" déjà connus par des données cheerio ─
-
-function mergeWithCheerio(
-  fromMistral: Partial<Exhibitor>,
-  fromCheerio: Partial<Exhibitor>,
-): Exhibitor {
-  const BLANK: Exhibitor = {
-    nom: 'N/A', description: 'N/A', siteWeb: 'N/A', logo: 'N/A',
-    stand: 'N/A', pays: 'N/A', linkedin: 'N/A', twitter: 'N/A',
-    categories: 'N/A', email: 'N/A', telephone: 'N/A',
-  };
-  const result: Exhibitor = { ...BLANK };
-  const keys = Object.keys(BLANK) as (keyof Exhibitor)[];
-  for (const k of keys) {
-    const m = (fromMistral as Record<string, string>)[k] ?? 'N/A';
-    const c = (fromCheerio as Record<string, string>)[k] ?? 'N/A';
-    // Cheerio est prioritaire car il ne peut pas halluciner
-    result[k] = (c && c !== 'N/A') ? c : (m && m !== 'N/A' ? m : 'N/A');
-  }
-  return result;
-}
 
 // ─── Direct mapping from raw API JSON (no AI, no hallucination) ───────────────
 
@@ -322,171 +257,214 @@ export async function POST(req: Request) {
     );
   }
 
-  const { isListing, rawCards, embeddedJSON, interceptedJson, broadJson, playwrightCards, html } = ctx;
+  // ─── Outils disponibles pour l'agent ─────────────────────────────────────────
+  // L'agent décide QUE appeler et QUAND réessayer. Les outils extraient sans halluciner.
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // CAS 1 : PAGE LISTE D'EXPOSANTS
-  // ═══════════════════════════════════════════════════════════════════════════
-  if (isListing) {
-    // 1a. JSON intercepté par Playwright (requêtes XHR/fetch réelles) — priorité maximale
-    // On filtre pour ne garder que les arrays dont les objets ressemblent à des exposants,
-    // et on vérifie qu'au moins un champ réel a été extrait (pas tout N/A).
-    if (interceptedJson.length > 0) {
-      const exhibitorArrays = interceptedJson
-        .filter(arr => arr.some(isExhibitorLike))
-        .sort((a, b) => b.length - a.length);
-      const best = exhibitorArrays[0];
-      if (best) {
-        const exhibitors = best.map(mapRawToExhibitor);
-        const hasRealData = exhibitors.some(e => e.nom !== 'N/A');
-        if (hasRealData) {
-          return Response.json({ type: 'list', exhibitors, count: exhibitors.length, source: 'playwright-intercepted' });
+  const agentTools = {
+    scrape_listing_page: tool({
+      description: `Scrape une page liste d'exposants et retourne tous les exposants trouvés.
+Utilise les stratégies disponibles dans l'ordre : JSON intercepté Playwright → DOM Playwright → cards cheerio + enrichissement → embedded JSON.
+Retourne les champs : nom, logo, description, siteWeb, stand, pays, linkedin, twitter, categories, email, telephone.`,
+      parameters: z.object({
+        url: z.string().describe("URL de la page liste à scraper (utilise l'URL originale par défaut)"),
+      }),
+      execute: async ({ url: listUrl }) => {
+        try {
+          const c = await scrapeUrl(listUrl);
+
+          // Priorité 1 : JSON XHR intercepté par Playwright
+          if (c.interceptedJson.length > 0) {
+            const best = c.interceptedJson
+              .filter(arr => arr.some(isExhibitorLike))
+              .sort((a, b) => b.length - a.length)[0];
+            if (best) {
+              const exhibitors = best.map(mapRawToExhibitor);
+              if (exhibitors.some(e => e.nom !== 'N/A'))
+                return { success: true, count: exhibitors.length, source: 'playwright-intercepted', exhibitors };
+            }
+          }
+
+          // Priorité 2 : cards extraites du DOM vivant par Playwright
+          if (c.playwrightCards.length >= 2) {
+            const cards = c.playwrightCards.map(pc => ({
+              card: {
+                nom: pc.name, logo: pc.logo || 'N/A',
+                categories: (pc.categories && pc.categories !== '#') ? pc.categories : 'N/A',
+                siteWeb: pc.href || 'N/A',
+                stand: 'N/A', pays: 'N/A', linkedin: 'N/A', twitter: 'N/A',
+                description: 'N/A', email: 'N/A', telephone: 'N/A',
+              },
+              detailUrl: (pc.href && pc.href !== '#') ? pc.href : null,
+            }));
+            const enriched = await enrichCards(cards);
+            const hasDeepData = enriched.some(e =>
+              e.description !== 'N/A' || e.pays !== 'N/A' || e.email !== 'N/A' ||
+              e.telephone !== 'N/A' || e.stand !== 'N/A' || e.linkedin !== 'N/A',
+            );
+            if (!isFooterContaminated(enriched) && hasDeepData) {
+              const clean = enriched.map(({ _detailUrl: _, ...rest }) => rest as Exhibitor);
+              return { success: true, count: clean.length, source: 'playwright-dom', exhibitors: clean };
+            }
+          }
+
+          // Priorité 3 : cards cheerio avec pagination + enrichissement détail
+          const { allCards } = await fetchAllListingPages(c.html, listUrl);
+          if (allCards.length >= 2) {
+            const enriched = await enrichCards(allCards);
+            if (!isFooterContaminated(enriched)) {
+              const clean = enriched.map(({ _detailUrl: _, ...rest }) => rest as Exhibitor);
+              return { success: true, count: clean.length, source: 'cheerio+detail', exhibitors: clean };
+            }
+          }
+
+          // Priorité 4 : JSON embarqué (__NEXT_DATA__, ld+json)
+          if (c.embeddedJSON.length >= 2) {
+            const exhibitors = (c.embeddedJSON as Record<string, unknown>[]).map(mapRawToExhibitor);
+            if (exhibitors.some(e => e.nom !== 'N/A'))
+              return { success: true, count: exhibitors.length, source: 'json-embedded', exhibitors };
+          }
+
+          // Priorité 5 : broad JSON (plateformes non-standard)
+          if (c.broadJson.length > 0) {
+            const candidates = c.broadJson.filter(arr => arr.length >= 5).sort((a, b) => b.length - a.length);
+            for (const arr of candidates) {
+              const exhibitors = arr.map(mapRawToExhibitor);
+              if (exhibitors.some(e => e.nom !== 'N/A'))
+                return { success: true, count: exhibitors.length, source: 'playwright-broad-json', exhibitors };
+            }
+          }
+
+          return {
+            success: false, count: 0,
+            message: 'Aucune donnée trouvée. La page est peut-être une SPA. Essaie discover_api_endpoints.',
+            discoveredEndpoints: discoverApiEndpoints(c.html, listUrl),
+          };
+        } catch (e) {
+          return { success: false, count: 0, message: String(e) };
         }
-      }
-    }
+      },
+    }),
 
-    // 1a'. Cards extraites directement du DOM vivant par Playwright (page.evaluate)
-    // C'est l'équivalent de BeautifulSoup sur le DOM rendu — 0 hallucination
-    if (playwrightCards.length >= 2) {
-      const cards = playwrightCards.map((c) => ({
-        card: {
-          nom: c.name,
-          logo: c.logo || 'N/A',
-          // Ignore les catégories "#" (ancre vide) qui polluent les résultats
-          categories: (c.categories && c.categories !== '#') ? c.categories : 'N/A',
-          siteWeb: c.href || 'N/A',
-          stand: 'N/A', pays: 'N/A', linkedin: 'N/A', twitter: 'N/A',
-          description: 'N/A', email: 'N/A', telephone: 'N/A',
-        },
-        detailUrl: (c.href && c.href !== '#') ? c.href : null,
-      }));
-      const enriched = await enrichCards(cards);
-      // Porte de qualité : si les pages détail sont aussi des SPA (enrichissement = 0),
-      // ne pas retourner des résultats vides → continuer vers la découverte d'API
-      const hasDeepData = enriched.some(e =>
-        e.description !== 'N/A' || e.pays !== 'N/A' || e.email !== 'N/A' ||
-        e.telephone !== 'N/A' || e.stand !== 'N/A' || e.linkedin !== 'N/A',
-      );
-      if (!isFooterContaminated(enriched) && hasDeepData) {
-        const clean = enriched.map(({ _detailUrl: _, ...rest }) => rest as Exhibitor);
-        return Response.json({ type: 'list', exhibitors: clean, count: clean.length, source: 'playwright-dom' });
-      }
-      // Pas de données enrichies → pages détail sont aussi des SPA, on continue vers l'API
-    }
+    scrape_exhibitor_page: tool({
+      description: `Scrape la page profil d'un seul exposant.
+Extrait : nom, logo, description, siteWeb, stand, pays, linkedin, twitter, categories, email, telephone.
+Utilise quand l'URL pointe vers la page d'une entreprise spécifique (pas une liste).`,
+      parameters: z.object({
+        url: z.string().describe("URL de la page profil d'un exposant"),
+      }),
+      execute: async ({ url: detailUrl }) => {
+        try {
+          const html = await fetchWebsite(detailUrl);
+          const data = extractFromDetailPage(html, detailUrl);
+          const { _detailUrl: _, ...clean } = data;
+          return { success: true, exhibitor: clean };
+        } catch (e) {
+          return { success: false, message: String(e) };
+        }
+      },
+    }),
 
-    // 1b. Pagination + collecte toutes les pages
-    let allCards = rawCards;
-    if (rawCards.length > 0) {
-      const { allCards: paginated } = await fetchAllListingPages(html, url);
-      if (paginated.length > rawCards.length) allCards = paginated;
-    }
+    fetch_api_endpoint: tool({
+      description: `Interroge un endpoint API JSON qui retourne des données d'exposants.
+Utilise après discover_api_endpoints ou quand l'URL ressemble à une API REST.
+Retourne les exposants avec mappage automatique des champs.`,
+      parameters: z.object({
+        url: z.string().describe("URL de l'endpoint API JSON à interroger"),
+      }),
+      execute: async ({ url: apiUrl }) => {
+        try {
+          const data = await tryJsonEndpoint(apiUrl);
+          if (!data || data.length < 1)
+            return { success: false, count: 0, message: 'Endpoint vide ou format non reconnu' };
+          const exhibitors = data.map(mapRawToExhibitor);
+          if (!exhibitors.some(e => e.nom !== 'N/A'))
+            return { success: false, count: 0, message: 'Données présentes mais aucun nom d\'exposant identifié' };
+          return { success: true, count: exhibitors.length, source: 'api-endpoint', exhibitors };
+        } catch (e) {
+          return { success: false, count: 0, message: String(e) };
+        }
+      },
+    }),
 
-    // 1b. Si on a des cards avec liens → enrichissement depuis pages détail (cheerio, sans IA)
-    if (allCards.length >= 2) {
-      const enriched = await enrichCards(allCards);
-      // Vérifie que les données ne viennent pas du pied de page du site (même tel, même pays, noms génériques)
-      if (!isFooterContaminated(enriched)) {
-        const clean = enriched.map(({ _detailUrl: _, ...rest }) => rest as Exhibitor);
+    discover_api_endpoints: tool({
+      description: `Analyse le code source d'une page pour découvrir des endpoints API JSON cachés.
+Indispensable pour les SPAs (React, Vue, Angular) qui chargent les données dynamiquement.
+Retourne une liste d'URLs candidates à passer ensuite à fetch_api_endpoint.`,
+      parameters: z.object({
+        url: z.string().describe("URL de la page dont on veut analyser les scripts"),
+      }),
+      execute: async ({ url: pageUrl }) => {
+        try {
+          const html = await fetchWebsite(pageUrl);
+          const endpoints = discoverApiEndpoints(html, pageUrl);
+          return { found: endpoints.length > 0, endpoints };
+        } catch (e) {
+          return { found: false, endpoints: [], message: String(e) };
+        }
+      },
+    }),
+  };
+
+  // ─── Agent agentique ──────────────────────────────────────────────────────────
+  // L'agent choisit ses outils, évalue les résultats, réessaie si nécessaire.
+  // Il n'invente jamais de données : toute extraction passe par les outils.
+  try {
+    const agentResult = await generateText({
+      model: llm('local-model'),
+      tools: agentTools,
+      maxSteps: 5,
+      system: `Tu es un agent de scraping web spécialisé dans les salons professionnels et annuaires d'exposants.
+Ton unique mission : extraire TOUTES les données d'exposants disponibles à cette URL.
+
+STRATÉGIE (dans cet ordre) :
+1. Si l'URL ressemble à une liste d'exposants → appelle scrape_listing_page.
+2. Si l'URL ressemble à la page d'une entreprise → appelle scrape_exhibitor_page.
+3. Si scrape_listing_page retourne success:false avec un message SPA →
+   appelle discover_api_endpoints, puis fetch_api_endpoint pour chaque URL trouvée.
+4. Arrête-toi dès qu'un outil retourne success:true avec count > 0 ou un exhibitor valide.
+
+RÈGLE ABSOLUE : Tu ne génères JAMAIS de données textuelles toi-même.
+Toute donnée retournée DOIT provenir d'un outil. N'invente rien.`,
+      prompt: `URL cible : ${url}\n\nHint détection : isListing=${ctx.isListing}, rawCards=${ctx.rawCards.length}, playwrightCards=${ctx.playwrightCards.length}, interceptedJson=${ctx.interceptedJson.length}`,
+    });
+
+    // Collecte tous les résultats d'outils réussis (du plus récent au plus ancien)
+    const allToolResults = agentResult.steps.flatMap(s => s.toolResults ?? []).reverse();
+
+    for (const tr of allToolResults) {
+      const out = tr.result as Record<string, unknown>;
+      if (!out?.success) continue;
+
+      if ('exhibitors' in out && Array.isArray(out.exhibitors) && (out.exhibitors as unknown[]).length > 0) {
         return Response.json({
           type: 'list',
-          exhibitors: clean,
-          count: clean.length,
-          source: 'cheerio+detail',
+          exhibitors: out.exhibitors,
+          count: (out.exhibitors as unknown[]).length,
+          source: out.source ?? 'agent',
         });
       }
-      // Contaminé → le site est probablement une SPA, on continue vers la découverte d'API
-    }
 
-    // 1c. Découverte d'API dans les scripts de la page (SPA/React/Vue)
-    //     Mappage direct sans IA → zéro hallucination
-    const apiEndpoints = discoverApiEndpoints(html, url);
-    for (const apiUrl of apiEndpoints) {
-      const jsonData = await tryJsonEndpoint(apiUrl);
-      if (jsonData && jsonData.length >= 2) {
-        const exhibitors = jsonData.map(mapRawToExhibitor);
-        return Response.json({
-          type: 'list',
-          exhibitors,
-          count: exhibitors.length,
-          source: 'api-discovered',
-        });
+      if ('exhibitor' in out && out.exhibitor) {
+        return Response.json({ type: 'single', exhibitor: out.exhibitor, source: 'agent' });
       }
     }
 
-    // 1d. JSON embarqué dans les scripts de la page (ex: __NEXT_DATA__, ld+json)
-    if (embeddedJSON.length >= 2) {
-      const compact = JSON.stringify(embeddedJSON).substring(0, 8000);
-      try {
-        const { text } = await generateText({
-          model: llm('local-model'),
-          system: `Tu es un extracteur de données. Tu reçois des données JSON brutes d'un site de salon professionnel.
-Retourne UNIQUEMENT un tableau JSON valide d'objets ayant exactement ces champs :
-${FIELDS_SCHEMA}
-${ANTI_HALLUCINATION}`,
-          prompt: `URL: ${url}\n\nDonnées JSON brutes trouvées dans la page (ne retourne que ce qui est dedans) :\n${compact}`,
-          maxTokens: 8000,
-        });
-        const data = extractJSON(text);
-        if (Array.isArray(data) && data.length >= 1) {
-          return Response.json({ type: 'list', exhibitors: data as Exhibitor[], count: data.length, source: 'json-embedded' });
-        }
-      } catch { /* fall through */ }
-    }
-
-    // 1e. Fallback broadJson : arrays capturées sans filtre exhibitor-like
-    // Utile pour les plateformes avec noms de champs non-standard (ex: Swapcard, EventMobi)
-    if (broadJson.length > 0) {
-      const candidates = broadJson
-        .filter(arr => arr.length >= 5)
-        .sort((a, b) => b.length - a.length);
-      for (const arr of candidates) {
-        const exhibitors = arr.map(mapRawToExhibitor);
-        const hasRealData = exhibitors.some(e => e.nom !== 'N/A');
-        if (hasRealData) {
-          return Response.json({ type: 'list', exhibitors, count: exhibitors.length, source: 'playwright-broad-json' });
-        }
-      }
-    }
-
-    // Aucune donnée trouvée → le site est probablement une SPA (chargement JS dynamique)
     return Response.json({
       type: 'list',
       exhibitors: [],
       count: 0,
-      error: 'Aucun exposant trouvé. Ce site charge ses données via JavaScript dynamique (SPA) et ne peut pas être scrappé directement.\n\n💡 Astuce : Ouvrez les DevTools du navigateur (F12 → onglet "Réseau" → filtre "Fetch/XHR"), rechargez la page, et copiez l\'URL de la requête API qui charge la liste des exposants — puis soumettez cette URL API ici.',
+      error: 'L\'agent n\'a pas pu extraire de données. Ce site est probablement une SPA protégée.\n\n💡 Astuce : Ouvrez les DevTools (F12 → Réseau → Fetch/XHR), rechargez la page, copiez l\'URL de la requête qui renvoie les exposants en JSON — puis soumettez cette URL ici.',
     });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const isBlocked = /403|429|RATE_LIMIT|cloudflare|captcha/i.test(msg);
+    return Response.json(
+      {
+        error: isBlocked
+          ? `Le site "${new URL(url).hostname}" bloque les robots (protection Cloudflare ou anti-bot). Essayez :\n1. Ouvrez la page dans votre navigateur\n2. Ouvrez les DevTools (F12) → onglet Réseau → filtre Fetch/XHR\n3. Rechargez la page et copiez l'URL de la requête API qui renvoie les exposants en JSON\n4. Soumettez cette URL API ici`
+          : `Impossible de scraper "${url}"\nErreur : ${msg}`,
+      },
+      { status: 502 },
+    );
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // CAS 2 : PAGE DÉTAIL D'UNE ENTREPRISE
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  // 2a. Extraction cheerio directe (fiable, sans IA)
-  const cheerioData = extractFromDetailPage(html, url);
-
-  // 2b. Mistral complète UNIQUEMENT les champs que cheerio n'a pas pu remplir
-  const missingFields = (Object.entries(cheerioData) as [string, string][])
-    .filter(([k, v]) => k !== '_detailUrl' && v === 'N/A')
-    .map(([k]) => k);
-
-  if (missingFields.length > 0) {
-    const context = buildSinglePageContext(html, url);
-    try {
-      const { text } = await generateText({
-        model: llm('local-model'),
-        system: SINGLE_SYSTEM,
-        prompt: `${context}\n\nLes champs suivants n'ont pas pu être extraits automatiquement. Retourne UNIQUEMENT un JSON avec ces champs (les autres mets "N/A") : ${missingFields.join(', ')}`,
-        maxTokens: 1000,
-      });
-      const mistralData = extractJSON(text) as Partial<Exhibitor> | null;
-      if (mistralData && typeof mistralData === 'object' && !Array.isArray(mistralData)) {
-        const merged = mergeWithCheerio(mistralData, cheerioData);
-        const { _detailUrl: _, ...clean } = merged;
-        return Response.json({ type: 'single', exhibitor: clean, source: 'cheerio+mistral' });
-      }
-    } catch { /* fall through */ }
-  }
-
-  const { _detailUrl: _, ...clean } = { ...cheerioData } as Exhibitor & { _detailUrl?: string };
-  return Response.json({ type: 'single', exhibitor: clean, source: 'cheerio' });
 }

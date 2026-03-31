@@ -179,6 +179,105 @@ function firstLink($: cheerio.CheerioAPI, pattern: RegExp): string {
 }
 
 /**
+ * Extracteur spécifique pour les pages profil Web Summit (/appearances/...).
+ * Lit directement l'objet appearanceDetailsTemplate dans __NEXT_DATA__.
+ */
+function extractWebSummitAppearance(html: string): Partial<Exhibitor> | null {
+  const $ = cheerio.load(html);
+  const raw = $('#__NEXT_DATA__').html();
+  if (!raw) return null;
+  try {
+    const json = JSON.parse(raw) as Record<string, unknown>;
+    const pp = (json?.props as Record<string, unknown>)?.pageProps as Record<string, unknown>;
+    const template = (((pp?.data as Record<string, unknown>)?.page as Record<string, unknown>)
+      ?.template as Record<string, unknown>)?.customPage as Record<string, unknown>;
+    const tplArr = template?.appearanceDetailsTemplate;
+    if (!Array.isArray(tplArr)) return null;
+
+    const profileItem = (tplArr as Record<string, unknown>[]).find(
+      (item: Record<string, unknown>) => item?.details !== undefined,
+    );
+    if (!profileItem) return null;
+
+    const details = (profileItem.details ?? {}) as Record<string, unknown>;
+    const urls = (profileItem.externalUrls ?? {}) as Record<string, unknown>;
+    const image = (profileItem.image ?? {}) as Record<string, unknown>;
+    const tags = (Array.isArray(profileItem.tags) ? profileItem.tags : []) as Record<string, unknown>[];
+
+    const s = (v: unknown): string =>
+      v && typeof v === 'string' && (v as string).trim() ? (v as string).trim() : 'N/A';
+
+    // Logo : sourceUrl ou première entrée du srcSet
+    const logoSrcSet = typeof image.srcSet === 'string'
+      ? (image.srcSet as string).split(',')[0].trim().split(' ')[0]
+      : '';
+    const logo = s(image.sourceUrl) !== 'N/A' ? s(image.sourceUrl) : (logoSrcSet || 'N/A');
+
+    // Catégories : tags sans le flag pays, sinon champ industry
+    const catTags = tags
+      .filter(t => t.icon !== 'ws-flag' && typeof t.name === 'string')
+      .map(t => t.name as string);
+    const categories = catTags.length > 0
+      ? catTags.join(', ')
+      : (s(details.industry) !== 'N/A' ? s(details.industry) : 'N/A');
+
+    // Pays : tag avec icon ws-flag, sinon details.country
+    const countryTag = tags.find(t => t.icon === 'ws-flag');
+    const pays = (countryTag && s(countryTag.name) !== 'N/A')
+      ? s(countryTag.name)
+      : s(details.country);
+
+    // Description : elevatorPitch (pitch court Web Summit) ou bio
+    const description = s(details.elevatorPitch) !== 'N/A'
+      ? s(details.elevatorPitch)
+      : s(details.bio);
+
+    // Twitter/X : Web Summit stocke Twitter dans le champ 'x'
+    const twitter = s(urls.x) !== 'N/A' ? s(urls.x) : s(urls.twitter);
+
+    return {
+      nom: s(details.name),
+      description,
+      siteWeb: s(urls.website),
+      logo,
+      linkedin: s(urls.linkedin),
+      twitter,
+      categories,
+      pays,
+      stand: 'N/A',
+      email: 'N/A',
+      telephone: 'N/A',
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Tente d'extraire un objet exposant unique depuis __NEXT_DATA__ (pages Next.js).
+ * Retourne null si la page n'est pas Next.js ou si aucun objet pertinent n'est trouvé.
+ */
+function extractNextDataObj(html: string): Record<string, unknown> | null {
+  const $ = cheerio.load(html);
+  const raw = $('#__NEXT_DATA__').html();
+  if (!raw) return null;
+  try {
+    const json = JSON.parse(raw);
+    const pageProps = json?.props?.pageProps;
+    if (!pageProps || typeof pageProps !== 'object') return null;
+    const pp = pageProps as Record<string, unknown>;
+    // Cherche d'abord sous des clés connues de pages profil
+    for (const key of ['company', 'exhibitor', 'participant', 'appearance', 'startup', 'brand', 'profile', 'speaker', 'attendee', 'member']) {
+      const val = pp[key];
+      if (val && typeof val === 'object' && !Array.isArray(val)) return val as Record<string, unknown>;
+    }
+    // Fallback : pageProps lui-même s'il ressemble à un exposant
+    if (isExhibitorLike(pp)) return pp;
+  } catch { /* JSON invalide ou absent */ }
+  return null;
+}
+
+/**
  * Extrait les données structurées depuis une page détail d'exposant.
  * Ne retourne QUE ce qui est littéralement présent dans le HTML.
  */
@@ -199,25 +298,39 @@ export function extractFromDetailPage(html: string, detailUrl: string): Partial<
   );
 
   // ── Logo ─────────────────────────────────────────────────────────────────
-  // On cherche d'abord un <img> explicitement nommé « logo » dans le contenu,
-  // puis un conteneur .logo > img, et seulement en dernier recours og:image
-  // (qui est souvent le banner promotionnel du salon, pas le logo exposant).
+  // Priorité décroissante : img logo explicite → og:image → apple-touch-icon → favicon
   const logoSelectors = [
     'img[class*="logo"]', 'img[class*="Logo"]',
-    'img[id*="logo"]', 'img[id*="Logo"]',
-    'img[alt*="logo"]', 'img[alt*="Logo"]',
-    'img[src*="logo"]', 'img[src*="Logo"]',
+    'img[id*="logo"]',   'img[id*="Logo"]',
+    'img[alt*="logo"]',  'img[alt*="Logo"]',
+    'img[src*="logo"]',  'img[src*="Logo"]',
     '.logo img', '#logo img',
     '[class*="logo"] img', '[id*="logo"] img',
+    '[class*="brand"] img', '[class*="Brand"] img',
+    'header img', '.header img',
+    '[class*="company"] img', '[class*="exhibitor"] img',
   ];
   let logoSrc = '';
   for (const sel of logoSelectors) {
     const el = $(sel).first();
-    logoSrc = el.attr('src') || el.attr('data-src') || el.attr('data-lazy-src') || el.attr('data-original') || '';
-    if (logoSrc) break;
+    // Essaie src, data-src, data-lazy-src, data-original, et la 1ère entrée de srcset
+    const srcset = el.attr('srcset') || '';
+    const srcsetFirst = srcset ? srcset.split(',')[0].trim().split(' ')[0] : '';
+    logoSrc = el.attr('src') || el.attr('data-src') || el.attr('data-lazy-src') || el.attr('data-original') || srcsetFirst || '';
+    if (logoSrc && !logoSrc.startsWith('data:')) break;
   }
   const ogImage = $('meta[property="og:image"]').attr('content') || '';
-  const logo = pickFirst(logoSrc, ogImage);
+  // Icône Apple touch (souvent le logo carré de l'entreprise)
+  const appleTouchIcon = $('link[rel="apple-touch-icon"]').attr('href')
+    || $('link[rel="apple-touch-icon-precomposed"]').attr('href') || '';
+  const faviconHref = $('link[rel="icon"][type="image/png"]').attr('href')
+    || $('link[rel="shortcut icon"][type="image/png"]').attr('href') || '';
+  const logo = pickFirst(
+    logoSrc && !logoSrc.startsWith('data:') ? logoSrc : '',
+    ogImage,
+    appleTouchIcon,
+    faviconHref,
+  );
   const logoResolved = logo !== 'N/A' ? resolveUrl(logo, detailUrl) : 'N/A';
 
   // ── Description ───────────────────────────────────────────────────────────
@@ -273,28 +386,38 @@ export function extractFromDetailPage(html: string, detailUrl: string): Partial<
   if (twitter === 'N/A') twitter = firstLink($, /(?:twitter\.com|x\.com)\//i);
 
   // ── Site web externe ──────────────────────────────────────────────────────
-  // Cherche un lien explicitement libellé "Website" ou "Site web" ou qui pointe vers un domaine externe
+  // Cherche un lien explicitement libellé "Website" ou pointant vers un domaine externe
   let siteWeb = 'N/A';
   const baseOrigin = (() => { try { return new URL(detailUrl).origin; } catch { return ''; } })();
 
-  $('a[href]').each((_, el) => {
-    if (siteWeb !== 'N/A') return false;
-    const $a = $(el);
-    const href = $a.attr('href') || '';
-    const label = $a.text().toLowerCase().replace(/\s+/g, ' ').trim();
-    const title = ($a.attr('title') || '').toLowerCase();
+  // 1. Cherche via attribut rel="external" ou classe/id explicite
+  const relExternal = $('a[rel="external"][href^="http"], a[class*="website"][href^="http"], a[class*="web-site"][href^="http"]').first().attr('href') || '';
+  if (relExternal && (!baseOrigin || !relExternal.startsWith(baseOrigin))) {
+    siteWeb = relExternal.split(/[?#]/)[0];
+  }
 
-    if (!href.startsWith('http')) return;
+  if (siteWeb === 'N/A') {
+    $('a[href]').each((_, el) => {
+      if (siteWeb !== 'N/A') return false;
+      const $a = $(el);
+      const href = $a.attr('href') || '';
+      const label = $a.text().toLowerCase().replace(/\s+/g, ' ').trim();
+      const title = ($a.attr('title') || '').toLowerCase();
+      const ariaLabel = ($a.attr('aria-label') || '').toLowerCase();
 
-    const isExternal = baseOrigin && !href.startsWith(baseOrigin);
-    const isLabelledWebsite =
-      /website|site web|visit|web\b/i.test(label) ||
-      /website|site/i.test(title);
+      if (!href.startsWith('http')) return;
 
-    if (isExternal && isLabelledWebsite) {
-      siteWeb = href.split(/[?#]/)[0];
-    }
-  });
+      const isExternal = baseOrigin && !href.startsWith(baseOrigin);
+      const isLabelledWebsite =
+        /website|site web|site officiel|visit|web\b|homepage|accueil/i.test(label) ||
+        /website|site/i.test(title) ||
+        /website|site web/i.test(ariaLabel);
+
+      if (isExternal && isLabelledWebsite) {
+        siteWeb = href.split(/[?#]/)[0];
+      }
+    });
+  }
 
   // ── Pays ─────────────────────────────────────────────────────────────────
   // Cherche dans la zone de contenu pour éviter les pays du salon (siège, etc.).
@@ -303,7 +426,7 @@ export function extractFromDetailPage(html: string, detailUrl: string): Partial<
   ).first().text().trim();
 
   const paysRegex = contentText.match(
-    /\b(France|Germany|Deutschland|United Kingdom|UK|USA|United States|Spain|Espagne|Italy|Italie|Belgium|Belgique|Netherlands|Pays-Bas|Switzerland|Suisse|Japan|Japon|China|Chine|South Korea|Canada|Brazil|Brésil|India|Inde|Australia|Australie|Sweden|Suède|Norway|Norvège|Denmark|Danemark|Finland|Finlande|Portugal|Austria|Autriche|Poland|Pologne|Czech Republic|Romania|Roumanie|Turkey|Turquie|UAE|Émirats|Singapore|Singapour|Israel|Israël|Ireland|Irlande|Luxembourg|Hong Kong|Morocco|Maroc|Tunisia|Tunisie|Algeria|Algérie|South Africa|Afrique du Sud)\b/,
+    /\b(France|Germany|Deutschland|United Kingdom|UK|USA|United States of America|United States|Spain|Espagne|España|Italy|Italie|Italia|Belgium|Belgique|België|Netherlands|Pays-Bas|Nederland|Switzerland|Suisse|Schweiz|Svizzera|Japan|Japon|Japon|China|Chine|Chína|South Korea|Korea|République de Corée|Canada|Brazil|Brésil|Brasil|India|Inde|Australia|Australie|Sweden|Suède|Sverige|Norway|Norvège|Norge|Denmark|Danemark|Danmark|Finland|Finlande|Suomi|Portugal|Austria|Autriche|Österreich|Poland|Pologne|Polska|Czech Republic|Czechia|Romania|Roumanie|România|Turkey|Turquie|Türkiye|UAE|United Arab Emirates|Émirats Arabes Unis|Émirats|Singapore|Singapour|Israel|Israël|Ireland|Irlande|Luxembourg|Hong Kong|Morocco|Maroc|Tunisia|Tunisie|Algeria|Algérie|South Africa|Afrique du Sud|Argentina|Argentine|Mexico|Mexique|Chile|Chili|Colombia|Colombie|Indonesia|Indonésie|Malaysia|Malaisie|Thailand|Thaïlande|Vietnam|Philippines|Pakistan|Egypt|Égypte|Nigeria|Kenya|Ghana|Senegal|Sénégal|Ivory Coast|Côte d'Ivoire|Cameroon|Cameroun|Croatia|Croatie|Serbia|Serbie|Hungary|Hongrie|Slovakia|Slovaquie|Ukraine|Greece|Grèce|Bulgaria|Bulgarie|Lithuania|Lituanie|Latvia|Lettonie|Estonia|Estonie|New Zealand|Nouvelle-Zélande|Iceland|Islande|Malta|Malte|Cyprus|Chypre|Qatar|Kuwait|Koweït|Saudi Arabia|Arabie Saoudite|Bahrain|Bahreïn|Jordan|Jordanie|Lebanon|Liban)\b/i,
   );
 
   const pays = pickFirst(
@@ -313,9 +436,12 @@ export function extractFromDetailPage(html: string, detailUrl: string): Partial<
 
   // ── Catégories / Intérêts ─────────────────────────────────────────────────
   // Utilise la zone de contenu ($c) pour éviter les catégories de navigation.
-  // Supprimé [class*="label"] (trop générique, capture les labels de formulaire).
   const catEls = $c(
-    '[class*="tag"],[class*="categor"],[class*="interest"],[class*="badge"],[class*="chip"],[class*="thematic"],[class*="sector"],[class*="domain"],[class*="topic"],[class*="expertise"],[class*="solution"],[class*="product-type"]',
+    '[class*="tag"],[class*="categor"],[class*="interest"],[class*="badge"],[class*="chip"],' +
+    '[class*="thematic"],[class*="sector"],[class*="domain"],[class*="topic"],[class*="expertise"],' +
+    '[class*="solution"],[class*="product-type"],[class*="keyword"],[class*="industry"],' +
+    '[class*="activity"],[class*="filière"],[class*="vertical"],[class*="market"],' +
+    '[data-tag],[data-category],[data-sector],[data-topic]',
   );
   const categories = catEls
     .map((_, el) => $c(el).text().trim().replace(/\s+/g, ' '))
@@ -325,18 +451,95 @@ export function extractFromDetailPage(html: string, detailUrl: string): Partial<
     .slice(0, 15)
     .join(', ') || 'N/A';
 
+  // ── Fallback __NEXT_DATA__ pour les pages Next.js ────────────────────────────
+  // Priorité 1 : extracteur spécifique Web Summit (appearanceDetailsTemplate)
+  // Priorité 2 : extracteur générique (pageProps.company / pageProps.exhibitor / etc.)
+  // « prefer » : garde la valeur CSS si elle est réelle, sinon prend la valeur JSON.
+  const prefer = (cssVal: string, jsonVal: string | undefined): string =>
+    cssVal !== 'N/A' ? cssVal : (jsonVal && jsonVal !== 'N/A' ? jsonVal : 'N/A');
+
+  const wsData = extractWebSummitAppearance(html);
+  if (wsData) {
+    return {
+      nom:         prefer(nom,         wsData.nom),
+      description: prefer(description, wsData.description),
+      siteWeb:     prefer(siteWeb,     wsData.siteWeb),
+      logo:        prefer(logoResolved, wsData.logo),
+      stand,
+      pays:        prefer(pays,        wsData.pays),
+      linkedin:    prefer(linkedin,    wsData.linkedin),
+      twitter:     prefer(twitter,     wsData.twitter),
+      categories:  prefer(categories,  wsData.categories),
+      email,
+      telephone,
+      _detailUrl: detailUrl,
+    };
+  }
+
+  // Extracteur générique pour les autres sites Next.js
+  const nextObj = extractNextDataObj(html);
+  const nextFill = (current: string, ...keys: string[]): string => {
+    if (current !== 'N/A' || !nextObj) return current;
+    for (const k of keys) {
+      const v = nextObj[k];
+      if (v && typeof v === 'string' && v.trim()) return v.trim();
+    }
+    const lk = keys.map(k => k.toLowerCase());
+    for (const [rk, rv] of Object.entries(nextObj)) {
+      if (lk.includes(rk.toLowerCase()) && typeof rv === 'string' && rv.trim()) return rv.trim();
+    }
+    return 'N/A';
+  };
+  const nextCats = (() => {
+    if (categories !== 'N/A' || !nextObj) return categories;
+    for (const k of ['categories', 'tags', 'interests', 'sectors', 'themes', 'thematics', 'thematic', 'sector', 'topics', 'domains', 'solutions', 'industries']) {
+      const v = nextObj[k];
+      if (Array.isArray(v)) {
+        const joined = v
+          .map(x => {
+            if (typeof x === 'string') return x;
+            if (typeof x === 'object' && x !== null) {
+              const o = x as Record<string, unknown>;
+              return o.name ?? o.label ?? o.title ?? o.value ?? '';
+            }
+            return '';
+          })
+          .filter(Boolean)
+          .join(', ');
+        if (joined) return joined;
+      }
+      if (typeof v === 'string' && v) return v;
+    }
+    return 'N/A';
+  })();
+
+  const nextPays = (() => {
+    const direct = nextFill(pays, 'country', 'pays', 'countryName', 'nation', 'country_name');
+    if (direct !== 'N/A') return direct;
+    if (!nextObj || pays !== 'N/A') return pays;
+    for (const k of ['country', 'pays', 'nation', 'location']) {
+      const v = nextObj[k];
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        const o = v as Record<string, unknown>;
+        const name = o.name ?? o.label ?? o.code;
+        if (name && typeof name === 'string') return name;
+      }
+    }
+    return pays;
+  })();
+
   return {
-    nom,
-    description,
-    siteWeb,
-    logo: logoResolved,
-    stand,
-    pays,
-    linkedin,
-    twitter,
-    categories,
-    email,
-    telephone,
+    nom: nextFill(nom, 'name', 'nom', 'company', 'displayName', 'exhibitorName', 'companyName', 'brandName', 'title'),
+    description: nextFill(description, 'description', 'desc', 'about', 'summary', 'shortDescription', 'longDescription', 'bio', 'pitch', 'presentation', 'profileDescription'),
+    siteWeb: nextFill(siteWeb, 'website', 'url', 'siteWeb', 'websiteUrl', 'externalUrl', 'web', 'homepage'),
+    logo: nextFill(logoResolved, 'logo', 'image', 'logoUrl', 'imageUrl', 'squareLogoUrl', 'thumbnail', 'photo', 'avatar'),
+    stand: nextFill(stand, 'stand', 'booth', 'hall', 'standNumber', 'boothNumber', 'standId', 'boothId'),
+    pays: nextPays,
+    linkedin: nextFill(linkedin, 'linkedin', 'linkedinUrl', 'linkedIn', 'linkedInUrl', 'linkedinProfile'),
+    twitter: nextFill(twitter, 'twitter', 'twitterUrl', 'x', 'xUrl', 'twitterProfile'),
+    categories: nextCats,
+    email: nextFill(email, 'email', 'mail', 'emailAddress', 'contactEmail', 'companyEmail', 'businessEmail'),
+    telephone: nextFill(telephone, 'phone', 'telephone', 'tel', 'phoneNumber', 'contactPhone', 'mobile'),
     _detailUrl: detailUrl,
   };
 }
@@ -405,8 +608,9 @@ export function extractExhibitorCards(
       if (!name) return;
 
       const imgEl = $el.find('img').first();
+      const srcset1 = (imgEl.attr('srcset') || '').split(',')[0].trim().split(' ')[0];
       const logo = resolveUrl(
-        imgEl.attr('src') || imgEl.attr('data-src') || imgEl.attr('data-lazy-src') || '',
+        imgEl.attr('src') || imgEl.attr('data-src') || imgEl.attr('data-lazy-src') || imgEl.attr('data-original') || srcset1 || '',
         baseUrl,
       );
 
@@ -526,7 +730,12 @@ export function extractExhibitorCards(
       const nameIdx = headerCells.findIndex(h => /name|nom|company|soci[eé]t[eé]|entreprise|exhibitor|sponsor/i.test(h));
       const standIdx = headerCells.findIndex(h => /stand|hall|booth|location|emplacement/i.test(h));
       const countryIdx = headerCells.findIndex(h => /country|pays|nation/i.test(h));
-      const catIdx = headerCells.findIndex(h => /categ|sector|tag|type|industry/i.test(h));
+      // Accented "catégories" → cat[eé]g to match both ASCII and accented variants
+      const catIdx = headerCells.findIndex(h => /cat[eé]g|sector|tag|type|industry|filière|thematic/i.test(h));
+      const emailIdx = headerCells.findIndex(h => /email|mail|courriel/i.test(h));
+      const telIdx = headerCells.findIndex(h => /t[eé]l[eé]?phone|\bt[eé]l\b|phone|mobile/i.test(h));
+      const linkedinIdx = headerCells.findIndex(h => /linkedin/i.test(h));
+      const siteWebIdx = headerCells.findIndex(h => /site\s*web|website|\bsite\b|\bweb\b/i.test(h));
 
       const tableItems: typeof items = [];
       const tableSeen = new Set<string>();
@@ -554,12 +763,61 @@ export function extractExhibitorCards(
         const stand = standIdx >= 0 ? ($(cells[standIdx])?.text().trim() || 'N/A') : 'N/A';
         const pays = countryIdx >= 0 ? ($(cells[countryIdx])?.text().trim() || 'N/A') : 'N/A';
         const cats = catIdx >= 0 ? ($(cells[catIdx])?.text().trim() || 'N/A') : 'N/A';
-        const href = $row.find('a[href]').first().attr('href') || '';
-        const logo = resolveUrl($row.find('img').first().attr('src') || '', baseUrl);
-        const detailUrl = href ? resolveUrl(href, baseUrl) : null;
+
+        // Email : extrait href mailto ou texte brut
+        const emailCell = emailIdx >= 0 ? $(cells[emailIdx]) : null;
+        const email = emailCell
+          ? (emailCell.find('a[href^="mailto:"]').attr('href')?.replace(/^mailto:/i, '').split('?')[0].trim()
+            || emailCell.text().trim()
+            || 'N/A')
+          : 'N/A';
+
+        // Téléphone : extrait href tel: ou texte brut
+        const telCell = telIdx >= 0 ? $(cells[telIdx]) : null;
+        const telephone = telCell
+          ? (telCell.find('a[href^="tel:"]').attr('href')?.replace(/^tel:/i, '').trim()
+            || telCell.text().trim()
+            || 'N/A')
+          : 'N/A';
+
+        // LinkedIn : extrait href du lien
+        const linkedinCell = linkedinIdx >= 0 ? $(cells[linkedinIdx]) : null;
+        const linkedin = linkedinCell
+          ? (linkedinCell.find('a[href]').attr('href')?.trim() || 'N/A')
+          : 'N/A';
+
+        // Site web : extrait href du lien dans la cellule dédiée
+        const siteWebCell = siteWebIdx >= 0 ? $(cells[siteWebIdx]) : null;
+        const siteWebFromCol = siteWebCell
+          ? (siteWebCell.find('a[href^="http"]').attr('href')?.split(/[?#]/)[0].trim() || 'N/A')
+          : 'N/A';
+
+        // detailUrl : préférer un lien interne dans la cellule du nom, sinon 1er lien de la ligne
+        const nameHref = nameIdx >= 0 ? ($(cells[nameIdx])?.find('a[href]').first().attr('href') || '') : '';
+        const firstRowHref = $row.find('a[href]').first().attr('href') || '';
+        const rawDetailHref = nameHref || firstRowHref;
+        const baseOriginForTable = (() => { try { return new URL(baseUrl).origin; } catch { return ''; } })();
+        const resolvedHref = rawDetailHref ? resolveUrl(rawDetailHref, baseUrl) : '';
+        // N'utilise comme detailUrl qu'un lien interne au même domaine
+        const detailUrl = resolvedHref && baseOriginForTable && resolvedHref.startsWith(baseOriginForTable)
+          ? resolvedHref
+          : null;
+
+        const logo = resolveUrl($row.find('img').first().attr('src') || $row.find('img').first().attr('data-src') || '', baseUrl);
 
         tableItems.push({
-          card: { ...BLANK, nom: name, logo, stand, pays, categories: cats, siteWeb: detailUrl ?? 'N/A' },
+          card: {
+            ...BLANK,
+            nom: name,
+            logo,
+            stand,
+            pays,
+            categories: cats,
+            email,
+            telephone,
+            linkedin,
+            siteWeb: siteWebFromCol !== 'N/A' ? siteWebFromCol : (detailUrl ?? 'N/A'),
+          },
           detailUrl,
         });
       });
