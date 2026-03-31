@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { scrapeExhibitors } from '@/lib/scraper';
+import { scrapeUrl } from '@/lib/scraper';
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,9 +13,9 @@ export async function POST(req: NextRequest) {
     }
 
     console.log('Scraping URL:', url);
-    const exhibitors = await scrapeExhibitors(url);
+    const context = await scrapeUrl(url);
     
-    return NextResponse.json({ exhibitors }, { status: 200 });
+    return NextResponse.json({ context }, { status: 200 });
   } catch (error) {
     console.error('Scrape error:', error);
     return NextResponse.json(
