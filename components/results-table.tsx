@@ -18,80 +18,11 @@ interface DataRow {
   phone: string;
 }
 
-const mockData: DataRow[] = [
-  {
-    id: '1',
-    nom: 'Tech Solutions Inc',
-    description: 'Entreprise de solutions technologiques',
-    siteWeb: 'www.techsolutions.fr',
-    logo: '🏢',
-    stand: 'Hall A - Stand 101',
-    pays: 'France',
-    linkedin: 'linkedin.com/company/techsolutions',
-    twitter: '@techsolutions',
-    categories: 'Tech, SaaS',
-    email: 'contact@techsolutions.fr',
-    phone: '+33 1 23 45 67 89',
-  },
-  {
-    id: '2',
-    nom: 'Digital Agency Pro',
-    description: 'Agence digitale spécialisée en marketing',
-    siteWeb: 'www.digitalagency.fr',
-    logo: '🎨',
-    stand: 'Hall B - Stand 205',
-    pays: 'France',
-    linkedin: 'linkedin.com/company/digitalagency',
-    twitter: '@dagencypro',
-    categories: 'Marketing, Design',
-    email: 'hello@digitalagency.fr',
-    phone: '+33 2 34 56 78 90',
-  },
-  {
-    id: '3',
-    nom: 'CloudSync Solutions',
-    description: 'Plateforme de synchronisation cloud',
-    siteWeb: 'www.cloudsync.io',
-    logo: '☁️',
-    stand: 'Hall A - Stand 150',
-    pays: 'Belgique',
-    linkedin: 'linkedin.com/company/cloudsync',
-    twitter: '@cloudsync_io',
-    categories: 'Cloud, Infrastructure',
-    email: 'info@cloudsync.io',
-    phone: '+32 2 12 34 56',
-  },
-  {
-    id: '4',
-    nom: 'DataFlow Analytics',
-    description: 'Analyse de données et business intelligence',
-    siteWeb: 'www.dataflow.ai',
-    logo: '📊',
-    stand: 'Hall C - Stand 89',
-    pays: 'Luxembourg',
-    linkedin: 'linkedin.com/company/dataflow',
-    twitter: '@dataflow_ai',
-    categories: 'BI, Data Science',
-    email: 'contact@dataflow.ai',
-    phone: '+352 1 23 45 67',
-  },
-  {
-    id: '5',
-    nom: 'SecureNet Corp',
-    description: 'Solutions de cybersécurité avancées',
-    siteWeb: 'www.securenet.io',
-    logo: '🔒',
-    stand: 'Hall B - Stand 140',
-    pays: 'France',
-    linkedin: 'linkedin.com/company/securenet',
-    twitter: '@securenet_io',
-    categories: 'Sécurité, Cybersecurity',
-    email: 'sales@securenet.io',
-    phone: '+33 3 45 67 89 01',
-  },
-];
+interface ResultsTableProps {
+  exhibitors?: DataRow[];
+}
 
-export default function ResultsTable() {
+export default function ResultsTable({ exhibitors = [] }: ResultsTableProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchText, setSearchText] = useState('');
@@ -101,7 +32,7 @@ export default function ResultsTable() {
 
   const downloadCSV = () => {
     const headers = ['Nom', 'Description', 'Site Web', 'Logo', 'Stand', 'Pays', 'LinkedIn', 'Twitter/X', 'Catégories', 'Email', 'Téléphone'];
-    const rows = mockData.map((row) => [
+    const rows = exhibitors.map((row) => [
       row.nom,
       row.description,
       row.siteWeb,
@@ -152,7 +83,7 @@ export default function ResultsTable() {
             backgroundColor: 'rgba(255, 255, 255, 0.2)',
             color: 'var(--text-main)',
           }} className="px-2 py-1 rounded-lg text-xs font-bold">
-            {mockData.length}
+            {exhibitors.length}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -315,7 +246,7 @@ export default function ResultsTable() {
             </tr>
           </thead>
           <tbody>
-            {mockData.map((row, index) => (
+            {exhibitors.map((row, index) => (
               <tr
                 key={row.id}
                 className="transition-all duration-200"

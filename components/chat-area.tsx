@@ -11,44 +11,7 @@ interface Message {
 }
 
 export default function ChatArea() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'assistant',
-      content: 'Bonjour ! Je suis votre assistant IA. Posez-moi une question ou analysez une URL pour commencer.',
-      timestamp: new Date(Date.now() - 300000),
-    },
-    {
-      id: '2',
-      role: 'user',
-      content: 'Peux-tu analyser le site example.com ?',
-      timestamp: new Date(Date.now() - 240000),
-    },
-    {
-      id: '3',
-      role: 'assistant',
-      content: 'Bien sûr ! Je vais analyser example.com pour toi. Cela va me prendre quelques secondes...',
-      timestamp: new Date(Date.now() - 200000),
-    },
-    {
-      id: '4',
-      role: 'assistant',
-      content: 'J\'ai trouvé 5 personnes et 3 entreprises associées à ce domaine. Voulez-vous les détails ?',
-      timestamp: new Date(Date.now() - 150000),
-    },
-    {
-      id: '5',
-      role: 'user',
-      content: 'Oui, montre-moi tous les résultats',
-      timestamp: new Date(Date.now() - 100000),
-    },
-    {
-      id: '6',
-      role: 'assistant',
-      content: 'Voici les résultats de l\'analyse. Vous pouvez voir les détails dans la zone "Résultats" en bas.',
-      timestamp: new Date(),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isFirstRender = useRef(true);
 
