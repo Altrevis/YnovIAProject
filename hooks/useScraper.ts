@@ -12,7 +12,7 @@ export interface Exhibitor {
   twitter: string;
   categories: string;
   email: string;
-  phone: string;
+  telephone: string;
 }
 
 interface ScrapeResponse {
@@ -64,7 +64,7 @@ export function useScraper() {
           twitter: e.twitter,
           categories: e.categories,
           email: e.email,
-          phone: e.phone || e.email, // fallback for missing phone
+          telephone: e.telephone || e.email, // fallback for missing telephone
         })
       );
 

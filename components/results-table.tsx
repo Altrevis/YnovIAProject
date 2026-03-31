@@ -15,7 +15,7 @@ interface DataRow {
   twitter: string;
   categories: string;
   email: string;
-  phone: string;
+  telephone: string;
 }
 
 interface ResultsTableProps {
@@ -43,7 +43,7 @@ export default function ResultsTable({ exhibitors = [] }: ResultsTableProps) {
       row.twitter,
       row.categories,
       row.email,
-      row.phone,
+      row.telephone,
     ]);
 
     const csv = [headers, ...rows].map((row) => row.map(cell => `"${cell}"`).join(',')).join('\n');
@@ -285,7 +285,7 @@ export default function ResultsTable({ exhibitors = [] }: ResultsTableProps) {
                   </span>
                 </td>
                 <td className="px-2 py-2 text-xs truncate" style={{ color: 'var(--text-secondary)' }}>{row.email}</td>
-                <td className="px-2 py-2 text-xs whitespace-nowrap truncate" style={{ color: 'var(--text-secondary)' }}>{row.phone}</td>
+                <td className="px-2 py-2 text-xs whitespace-nowrap truncate" style={{ color: 'var(--text-secondary)' }}>{row.telephone}</td>
                 <td className="px-2 py-2 text-xs">
                   <button
                     onClick={() => copyToClipboard(row.email, row.id)}

@@ -10,8 +10,11 @@ interface Message {
   timestamp: Date;
 }
 
-export default function ChatArea() {
-  const [messages, setMessages] = useState<Message[]>([]);
+interface ChatAreaProps {
+  messages: Message[];
+}
+
+export default function ChatArea({ messages }: ChatAreaProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isFirstRender = useRef(true);
 

@@ -3,21 +3,13 @@
 import { useState } from 'react';
 import { Send, Paperclip } from 'lucide-react';
 
-export default function InputArea() {
+export default function InputArea({ onSend, isLoading }: { onSend: (msg: string) => void; isLoading?: boolean }) {
   const [message, setMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSend = async () => {
-    if (!message.trim()) return;
-
-    setIsLoading(true);
-    console.log('Sending message:', message);
-    
-    // Simulate sending
-    setTimeout(() => {
-      setMessage('');
-      setIsLoading(false);
-    }, 800);
+  const handleSend = () => {
+    if (!message.trim() || isLoading) return;
+    onSend(message);
+    setMessage('');
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {

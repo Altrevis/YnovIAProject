@@ -1,16 +1,27 @@
 'use client';
 
-import { useState } from 'react';
-import { Globe, BarChart3, Zap } from 'lucide-react';
+import { Globe, Zap, BarChart3 } from 'lucide-react';
 
-export default function FilterPanel() {
-  const [url, setUrl] = useState('');
-  const [selectedEntities, setSelectedEntities] = useState(['all']);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+interface FilterPanelProps {
+  url: string;
+  onUrlChange: (url: string) => void;
+  selectedEntities: string[];
+  onEntitiesChange: (entities: string[]) => void;
+  onAnalyze: () => void;
+  isLoading: boolean;
+}
 
+export default function FilterPanel({
+  url,
+  onUrlChange,
+  selectedEntities,
+  onEntitiesChange,
+  onAnalyze,
+  isLoading,
+}: FilterPanelProps) {
   const handleEntityToggle = (value: string) => {
     if (value === 'all') {
-      setSelectedEntities(['all']);
+      onEntitiesChange(['all']);
     } else {
       let newSelected = selectedEntities.includes(value)
         ? selectedEntities.filter(e => e !== value)
@@ -19,16 +30,8 @@ export default function FilterPanel() {
       if (newSelected.length === 0) {
         newSelected = ['all'];
       }
-      setSelectedEntities(newSelected);
+      onEntitiesChange(newSelected);
     }
-  };
-
-  const handleAnalyze = () => {
-    if (!url.trim()) return;
-    setIsAnalyzing(true);
-    const entityType = selectedEntities.includes('all') ? 'all' : selectedEntities.join(', ');
-    console.log('Analyzing:', { url, entityType });
-    setTimeout(() => setIsAnalyzing(false), 1500);
   };
 
   return (
@@ -51,7 +54,7 @@ export default function FilterPanel() {
           <input
             type="text"
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            onChange={(e) => onUrlChange(e.target.value)}
             placeholder="https://example.com"
             style={{
               backgroundColor: 'var(--bg-secondary)',
@@ -131,19 +134,19 @@ export default function FilterPanel() {
 
         {/* Analyze Button */}
         <button
-          onClick={handleAnalyze}
-          disabled={isAnalyzing || !url.trim()}
+          onClick={onAnalyze}
+          disabled={isLoading || !url.trim()}
           style={{
-            background: isAnalyzing || !url.trim()
+            background: isLoading || !url.trim()
               ? 'var(--bg-secondary)'
               : `linear-gradient(135deg, #6647fc, #eb6ea6)`,
             color: 'var(--text-main)',
-            opacity: isAnalyzing || !url.trim() ? 0.5 : 1,
-            boxShadow: isAnalyzing || !url.trim() ? 'none' : '0 8px 20px rgba(235, 110, 166, 0.3)',
+            opacity: isLoading || !url.trim() ? 0.5 : 1,
+            boxShadow: isLoading || !url.trim() ? 'none' : '0 8px 20px rgba(235, 110, 166, 0.3)',
           }}
           className="w-full font-bold py-2 px-4 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl disabled:cursor-not-allowed transform hover:scale-105 active:scale-95 text-sm"
         >
-          {isAnalyzing ? (
+          {isLoading ? (
             <>
               <Zap size={20} className="animate-pulse" />
               Analyse en cours...

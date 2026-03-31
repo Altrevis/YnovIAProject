@@ -9,7 +9,7 @@ interface DataRow {
   nom: string;
   type: 'Personne' | 'Entreprise';
   email: string;
-  phone: string;
+  telephone: string;
   source: string;
   dateAnalyse: string;
 }
@@ -20,7 +20,7 @@ const mockData: DataRow[] = [
     nom: 'Jean Dupont',
     type: 'Personne',
     email: 'jean.dupont@example.com',
-    phone: '+33 6 12 34 56 78',
+    telephone: '+33 6 12 34 56 78',
     source: 'LinkedIn',
     dateAnalyse: '2024-03-30',
   },
@@ -29,7 +29,7 @@ const mockData: DataRow[] = [
     nom: 'Tech Solutions Inc',
     type: 'Entreprise',
     email: 'contact@techsolutions.fr',
-    phone: '+33 1 23 45 67 89',
+    telephone: '+33 1 23 45 67 89',
     source: 'Website',
     dateAnalyse: '2024-03-30',
   },
@@ -38,7 +38,7 @@ const mockData: DataRow[] = [
     nom: 'Marie Martin',
     type: 'Personne',
     email: 'marie.martin@example.com',
-    phone: '+33 6 98 76 54 32',
+    telephone: '+33 6 98 76 54 32',
     source: 'Twitter',
     dateAnalyse: '2024-03-30',
   },
@@ -54,7 +54,7 @@ export default function ResultsPage() {
       row.nom,
       row.type,
       row.email,
-      row.phone,
+      row.telephone,
       row.source,
       row.dateAnalyse,
     ]);
@@ -158,7 +158,7 @@ export default function ResultsPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm" style={{ color: 'var(--text-secondary)' }}>{row.email}</td>
-                    <td className="px-6 py-4 text-sm" style={{ color: 'var(--text-secondary)' }}>{row.phone}</td>
+                    <td className="px-6 py-4 text-sm" style={{ color: 'var(--text-secondary)' }}>{row.telephone}</td>
                     <td className="px-6 py-4 text-sm" style={{ color: 'var(--text-secondary)' }}>{row.source}</td>
                     <td className="px-6 py-4 text-sm" style={{ color: 'var(--text-secondary)' }}>{row.dateAnalyse}</td>
                     <td className="px-6 py-4 text-sm">
