@@ -559,7 +559,8 @@ export default function Chat() {
           <button
             type="submit"
             disabled={isLoading || !input.trim()}
-            className="rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black px-5 py-2 text-sm font-medium transition-opacity disabled:opacity-40 hover:opacity-80"
+            className="rounded-full px-5 py-2 text-sm font-medium transition-opacity disabled:opacity-40 hover:opacity-80"
+            style={{ background: 'linear-gradient(135deg, #6647fc, #eb6ea6)', color: 'var(--text-on-gradient)' }}
           >
             {isLoading ? '…' : 'Envoyer'}
           </button>
